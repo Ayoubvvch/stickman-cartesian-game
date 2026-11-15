@@ -1,0 +1,103 @@
+name: Build & Release Windows App
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies & target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            src-tauri/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build Tauri Windows installers & executable
+        run: npx tauri build --bundles nsis,msi
+
+      - name: Package artifacts & publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $conf = Get-Content "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+          $ver = $conf.version
+          $tag = if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME) {
+            $env:GITHUB_REF_NAME
+          } else {
+            "v$ver"
+          }
+
+          $assets = @()
+          $nsisFiles = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" -ErrorAction SilentlyContinue
+          $msiFiles = Get-ChildItem "src-tauri/target/release/bundle/msi/*.msi" -ErrorAction SilentlyContinue
+          foreach ($f in $nsisFiles) { $assets += $f.FullName }
+          foreach ($f in $msiFiles) { $assets += $f.FullName }
+
+          $exe = Get-ChildItem "src-tauri/target/release/*.exe" | Where-Object { $_.Name -notlike "*-setup.exe" } | Select-Object -First 1
+          if (-not $exe) {
+            throw "Built executable not found in src-tauri/target/release/"
+          }
+
+          $portableDir = "portable-win64"
+          New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
+          Copy-Item $exe.FullName "$portableDir/StickmanCartesianFrame.exe"
+          if (Test-Path "src-tauri/target/release/WebView2Loader.dll") {
+            Copy-Item "src-tauri/target/release/WebView2Loader.dll" "$portableDir/"
+          }
+          $zipPath = Join-Path (Get-Location) "Stickman-Cartesian-Frame-Portable-win64.zip"
+          Compress-Archive -Path "$portableDir/*" -DestinationPath $zipPath -Force
+          $assets += $zipPath
+
+          if ($assets.Count -eq 0) {
+            throw "No Windows release artifacts were produced."
+          }
+
+          Write-Host "Publishing tag $tag with assets:"
+          $assets | ForEach-Object { Write-Host " - $_" }
+
+          $notes = @(
+            "## Stickman · Orthonormal Cartesian Frame ($tag)"
+            ''
+            '- **Windows Installer (`*-setup.exe` / `*.msi`)**: Recommended — installs with Start Menu & Desktop shortcuts.'
+            '- **Portable (`Stickman-Cartesian-Frame-Portable-win64.zip`)**: Extract anywhere and run `StickmanCartesianFrame.exe` directly.'
+          ) -join "`n"
+
+          $exists = $false
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) { $exists = $true }
+
+          if (-not $exists) {
+            gh release create $tag @assets --title "Stickman Cartesian Frame $tag" --notes $notes
+          } else {
+            gh release upload $tag @assets --clobber
+          }

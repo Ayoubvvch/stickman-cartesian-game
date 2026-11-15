@@ -1,0 +1,13 @@
+{
+  "name": "stickman-cartesian-game",
+  "version": "1.0.0",
+  "description": "Interactive orthonormal Cartesian coordinate system and calculus platformer featuring an IK-animated stickman",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/prepare-dist.mjs",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4"
+  }
+}

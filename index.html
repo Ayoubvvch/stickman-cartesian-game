@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Stickman · Orthonormal Cartesian Frame</title>
+  <link rel="stylesheet" href="style.css?v=opt1" />
+</head>
+<body class="theme-black">
+  <div id="app">
+    <canvas id="gridCanvas" aria-hidden="true"></canvas>
+    <canvas id="gameCanvas" aria-label="Playfield - Orthonormal Cartesian Coordinate System"></canvas>
+
+    <!-- Top HUD Bar -->
+    <header class="hud-top">
+      <!-- Live Math Coordinates & Physics Card -->
+      <section class="hud-card telemetry-card" aria-label="Coordinates & Motion">
+        <div class="card-header">
+          <span class="badge-title">Orthonormal Frame</span>
+          <span class="math-basis">(<i>O</i>; <span class="vec">i</span>, <span class="vec">j</span>)</span>
+          <span id="stateBadge" class="state-badge">Idle</span>
+        </div>
+
+        <div class="telemetry-grid">
+          <div class="metric">
+            <span class="metric-label">x</span>
+            <span id="coordX" class="metric-value accent-x">0.00</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">y</span>
+            <span id="coordY" class="metric-value accent-y">0.00</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">v<sub>x</sub></span>
+            <span id="velX" class="metric-value">0.00</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">v<sub>y</sub></span>
+            <span id="velY" class="metric-value">0.00</span>
+          </div>
+        </div>
+
+        <div class="scale-row">
+          <span class="scale-label">Scale:</span>
+          <span id="scaleInfo" class="scale-value">1 u = 72 px</span>
+          <span class="ortho-pill" title="Perpendicular axes with equal unit basis lengths">‖<span class="vec">i</span>‖ = ‖<span class="vec">j</span>‖ = 1</span>
+        </div>
+      </section>
+
+      <!-- Toolbar & Input Status -->
+      <div class="hud-right-stack">
+        <nav class="hud-card toolbar-card" aria-label="View Controls">
+          <button id="btnZoomOut" class="tool-btn" title="Zoom Out (-)" aria-label="Zoom Out">−</button>
+          <button id="btnZoomIn" class="tool-btn" title="Zoom In (+)" aria-label="Zoom In">+</button>
+          <button id="btnReset" class="tool-btn" title="Reset to Origin O(0,0) (R)" aria-label="Reset to O(0, 0)">O(0,0)</button>
+          <button id="btnFollow" class="tool-btn active" title="Auto-Follow Camera (C)" aria-pressed="true">Follow</button>
+          <button id="btnProjections" class="tool-btn active" title="Show (x, y) Projections (P)" aria-pressed="true">Projections</button>
+          <button id="btnVelocity" class="tool-btn" title="Show Velocity Vector v (V)" aria-pressed="false">Vector <span class="vec">v</span></button>
+          <button id="btnFreeFall" class="tool-btn" title="Drop from Altitude for Free Fall (G)">Free Fall</button>
+          <button id="btnFunc" class="tool-btn active" title="Toggle Function Plotter Panel" aria-pressed="true">f(x) Surf</button>
+          <button id="btnTrials" class="tool-btn" title="Derivative Mastery Challenges" aria-pressed="false">Trials</button>
+          <button id="btnDance" class="tool-btn" title="Toggle Dance (Z)" aria-pressed="false">Dance</button>
+          <button id="btnAudio" class="tool-btn" title="Mute/Unmute Honored One Audio (M)" aria-pressed="false" aria-label="Dance 3 Audio" data-audio-state="idle">🔊 Audio</button>
+          <button id="btnTouchPad" class="tool-btn" title="Toggle On-Screen Touch Controls" aria-pressed="false">Touch Pad</button>
+          <button id="btnTheme" class="tool-btn" title="Toggle Theme (T)" aria-label="Toggle Theme">☀️</button>
+          <button id="btnHelp" class="tool-btn active" title="Controls Guide (H)" aria-pressed="true">?</button>
+        </nav>
+
+        <!-- Input Device Status -->
+        <div class="hud-card input-status-card">
+          <div class="input-pill" id="keyboardPill">
+            <span class="status-dot active" id="kbDot"></span>
+            <span>Keyboard</span>
+          </div>
+          <div class="input-pill" id="gamepadPill">
+            <span class="status-dot" id="gpDot"></span>
+            <span id="gpLabel">Controller: Disconnected</span>
+          </div>
+          <!-- Mini live gamepad visualizer when connected -->
+          <div id="gpMonitor" class="gp-monitor hidden" aria-hidden="true">
+            <div class="gp-stick-box">
+              <div class="gp-stick-dot" id="gpStickDot"></div>
+            </div>
+            <div class="gp-buttons-mini">
+              <span class="gp-btn" id="gpBtnA">A</span>
+              <span class="gp-btn" id="gpBtnB">B</span>
+              <span class="gp-btn" id="gpBtnX">X</span>
+              <span class="gp-btn" id="gpBtnY">Y</span>
+              <span class="gp-btn" id="gpBtnRun">RT</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Collapsible Controls Legend -->
+    <aside id="helpPanel" class="hud-card help-panel" aria-label="Controls Guide">
+      <div class="help-header">
+        <strong>Movement Controls</strong>
+        <button id="btnCloseHelp" class="close-mini" aria-label="Close">×</button>
+      </div>
+      <div class="help-columns">
+        <div class="help-col">
+          <div class="help-col-title">⌨️ Keyboard</div>
+          <ul>
+            <li><kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd> : Walk along x-axis</li>
+            <li><kbd>Shift</kbd> + Move : Sprint (or fast climb / descend)</li>
+            <li><kbd>Space</kbd> or <kbd>W</kbd> / <kbd>↑</kbd> : Jump (double jump)</li>
+            <li><kbd>Q</kbd> (or <kbd>W</kbd>/<kbd>↑</kbd> at x = 0) : Climb y-axis</li>
+            <li><kbd>G</kbd> : Drop from high altitude (Free Fall) — <kbd>↓</kbd> Dive / <kbd>↑</kbd> Brake</li>
+            <li><b>y = f(x) Curves</b> : Land or walk onto curve to surf · <kbd>S</kbd> tuck · <kbd>S</kbd>+<kbd>Space</kbd> drop</li>
+            <li><b>Trials Mode</b> : Calculus challenges (<kbd>B</kbd> Lock critical/inflection point · <kbd>f'(x)</kbd> overlay)</li>
+            <li><kbd>Z</kbd> : Dance (<kbd>1</kbd> Gojo Purple · <kbd>2</kbd> Disco · <kbd>3</kbd> Honored One + Audio · <kbd>M</kbd> Mute)</li>
+            <li><kbd>S</kbd> or <kbd>↓</kbd> : Crouch / Slide while sprinting</li>
+            <li><kbd>E</kbd> or <kbd>K</kbd> : Dash · <kbd>F</kbd> : Flip</li>
+            <li><kbd>R</kbd> : Reset to origin O(0,0)</li>
+          </ul>
+        </div>
+        <div class="help-col">
+          <div class="help-col-title">🎮 Controller</div>
+          <ul>
+            <li><b>Left Stick</b> : Analog walk / run · push up at x = 0 to climb</li>
+            <li><b>D-Pad</b> + <kbd>RT</kbd>/<kbd>LT</kbd>/<kbd>LB</kbd> : Walk, sprint, or fast climb</li>
+            <li><kbd>A</kbd> / <kbd>✕</kbd> : Jump (press again for double jump)</li>
+            <li><kbd>B</kbd> / <kbd>○</kbd> : Crouch / Slide · or release climb</li>
+            <li><kbd>X</kbd> / <kbd>□</kbd> or <kbd>RB</kbd> : Dash</li>
+            <li><kbd>Y</kbd> / <kbd>△</kbd> : Dance on ground / Flip in mid-air</li>
+            <li><kbd>Start</kbd> / <kbd>Options</kbd> : Reset to O(0,0)</li>
+          </ul>
+        </div>
+      </div>
+      <div class="help-footer">
+        💡 Jump or walk onto any curve <b>y = f(x)</b> to surf tangent slopes! Hold <kbd>S</kbd> to carve faster, or press <kbd>S</kbd> + <kbd>Space</kbd> to drop through.
+      </div>
+    </aside>
+
+    <!-- Optional On-Screen Virtual Controller -->
+    <div id="virtualPad" class="virtual-pad hidden" aria-label="Virtual Touch Controls">
+      <div class="vpad-left">
+        <button class="vbtn" data-action="left" aria-label="Left">◀</button>
+        <button class="vbtn" data-action="up" aria-label="Climb / Up">▲</button>
+        <button class="vbtn" data-action="down" aria-label="Crouch / Down">▼</button>
+        <button class="vbtn" data-action="right" aria-label="Right">▶</button>
+      </div>
+      <div class="vpad-right">
+        <button class="vbtn vbtn-pill" data-action="sprint">RUN</button>
+        <button class="vbtn vbtn-action" data-action="dance">DANCE</button>
+        <button class="vbtn vbtn-action" data-action="dash">DASH</button>
+        <button class="vbtn vbtn-jump" data-action="jump">JUMP</button>
+      </div>
+    </div>
+
+    <!-- Math Function Plotter & Slope Surfing Card -->
+    <section id="funcPanel" class="hud-card func-panel" aria-label="Function Plotter & Slope Surfing">
+      <div class="func-header">
+        <div class="func-title-wrap">
+          <strong>f(x) Slope Surfing</strong>
+          <span class="func-hint">Land on curves · <kbd>S</kbd> carve · <kbd>S</kbd>+<kbd>Space</kbd> drop</span>
+        </div>
+        <div class="func-header-actions">
+          <button id="btnDerivOverlay" class="tool-btn" aria-pressed="false" title="Overlay Live Derivative Curve y = f'(x)">f'(x)</button>
+          <button id="btnToggleFunc" class="tool-btn active" aria-pressed="true" title="Show/Hide Function Curve">ON</button>
+          <button id="btnCloseFunc" class="close-mini" aria-label="Hide Function Card">×</button>
+        </div>
+      </div>
+
+      <form id="funcForm" class="func-form" autocomplete="off">
+        <label class="func-eq-label" for="funcInput">y =</label>
+        <input
+          id="funcInput"
+          type="text"
+          spellcheck="false"
+          value="1.6 * sin(0.7 * x) + 2.2"
+          placeholder="e.g. 1.6*sin(0.7*x) + 2.2"
+          aria-label="Function expression f(x)"
+        />
+        <button id="btnApplyFunc" type="submit" class="func-apply-btn">Plot</button>
+      </form>
+
+      <div id="funcPresets" class="func-presets" role="group" aria-label="Preset Functions"></div>
+      <div id="funcStatus" class="func-status" aria-live="polite">
+        Active: y = 1.6 * sin(0.7 * x) + 2.2
+      </div>
+    </section>
+
+    <!-- Derivative Mastery Trials Card -->
+    <section id="trialPanel" class="hud-card trial-panel hidden" dir="rtl" aria-label="تحديات إتقان المشتقات">
+      <div class="trial-header">
+        <div class="trial-header-title">
+          <strong>تحديات إتقان المشتقات</strong>
+          <span id="trialProgress" class="trial-progress">0/6 مكتمل</span>
+        </div>
+        <button id="btnCloseTrial" class="close-mini" aria-label="إغلاق وضع التحديات">×</button>
+      </div>
+
+      <div id="trialTabs" class="trial-tabs" role="tablist" aria-label="اختر التحدي"></div>
+
+      <div class="trial-body">
+        <div id="trialTitle" class="trial-title"></div>
+        <div id="trialConcept" class="trial-concept"></div>
+        <p id="trialPrompt" class="trial-prompt"></p>
+      </div>
+
+      <form id="trialForm" class="func-form trial-form" dir="ltr" autocomplete="off">
+        <label class="func-eq-label" for="trialExprInput">f(x) =</label>
+        <input
+          id="trialExprInput"
+          type="text"
+          spellcheck="false"
+          placeholder="اكتب الدالة f(x)..."
+          aria-label="صيغة الدالة f(x)"
+        />
+        <button id="btnTrialPlot" type="submit" class="func-apply-btn">تطبيق</button>
+      </form>
+
+      <div id="trialMarkRow" class="trial-mark-row hidden">
+        <button id="btnTrialMark" type="button" class="trial-mark-btn">
+          ثبّت النقطة عند <span dir="ltr">x</span> الحالي <kbd dir="ltr">B</kbd>
+        </button>
+      </div>
+
+      <ul id="trialChecks" class="trial-checks" aria-live="polite"></ul>
+
+      <div id="trialFeedback" class="trial-feedback hidden" aria-live="polite"></div>
+      <div id="trialHintBox" class="trial-hint-box hidden"></div>
+
+      <div class="trial-footer">
+        <button id="btnTrialHint" type="button" class="tool-btn">تلميح</button>
+        <div class="trial-nav-btns">
+          <button id="btnTrialPrev" type="button" class="tool-btn" title="التحدي السابق">السابق</button>
+          <button id="btnTrialReset" type="button" class="tool-btn" title="إعادة ضبط التحدي (R)">إعادة</button>
+          <button id="btnTrialNext" type="button" class="tool-btn trial-next-btn" title="التحدي التالي">التالي ←</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script defer src="js/config.js?v=opt1"></script>
+  <script defer src="js/functions.js?v=opt1"></script>
+  <script defer src="js/challenges.js?v=opt1"></script>
+  <script defer src="js/input.js?v=opt1"></script>
+  <script defer src="js/particles.js?v=opt1"></script>
+  <script defer src="js/grid.js?v=opt1"></script>
+  <script defer src="js/stickman.js?v=opt1"></script>
+  <script defer src="js/game.js?v=opt1"></script>
+</body>
+</html>

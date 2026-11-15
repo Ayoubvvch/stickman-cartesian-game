@@ -1,6 +1,6 @@
 {
   "name": "stickman-cartesian-game",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Interactive orthonormal Cartesian coordinate system and calculus platformer featuring an IK-animated stickman",
   "private": true,
   "scripts": {

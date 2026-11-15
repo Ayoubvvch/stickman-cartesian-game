@@ -1,6 +1,6 @@
 [package]
 name = "stickman-cartesian-game"
-version = "1.0.0"
+version = "2.0.0"
 description = "Interactive Orthonormal Cartesian Frame & Calculus Stickman Game"
 authors = ["AcMods (Ayoubvvch)"]
 edition = "2021"

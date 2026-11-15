@@ -75,9 +75,20 @@ body {
   z-index: 0;
 }
 
+#glCanvas {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  transition: opacity 0.2s ease;
+}
+
 #gameCanvas {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   display: block;
   width: 100%;
   height: 100%;
@@ -246,11 +257,25 @@ body {
 }
 
 .toolbar-card {
-  padding: 6px;
+  padding: 5px 6px;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   flex-wrap: wrap;
+}
+
+.tool-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tool-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--card-border);
+  margin: 0 2px;
+  flex: 0 0 auto;
 }
 
 .tool-btn {
@@ -259,20 +284,39 @@ body {
   background: var(--btn-bg);
   color: var(--text-main);
   font-family: var(--font-ui);
-  font-size: 0.8rem;
+  font-size: 0.79rem;
   font-weight: 600;
-  padding: 6px 10px;
+  padding: 6px 9px;
   border-radius: 9px;
   cursor: pointer;
-  transition: transform 0.08s ease, background-color 0.15s ease, color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
+  transition: transform 0.08s ease, background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
-.tool-btn:hover {
+.tool-btn.tool-icon {
+  min-width: 30px;
+  padding: 6px 8px;
+}
+
+.tool-btn.tool-trials {
+  border-color: var(--card-border);
+}
+
+.tool-btn:hover:not(:disabled) {
   background: var(--btn-hover);
 }
 
-.tool-btn:active {
+.tool-btn:active:not(:disabled) {
   transform: scale(0.96);
+}
+
+.tool-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
 }
 
 .tool-btn.active {
@@ -283,6 +327,22 @@ body {
 .tool-btn.is-muted {
   color: var(--accent-x);
   border-color: rgba(244, 63, 94, 0.35);
+}
+
+.func-active-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  opacity: 0.55;
+  flex: 0 0 auto;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.func-active-dot.is-on {
+  background: var(--accent-ok);
+  opacity: 1;
+  box-shadow: 0 0 6px var(--accent-ok);
 }
 
 /* Input Status Card */
@@ -570,7 +630,8 @@ kbd {
 .func-header-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .func-form {
@@ -660,6 +721,48 @@ kbd {
   background: var(--btn-active-bg);
   color: var(--btn-active-fg);
   border-color: transparent;
+}
+
+.func-symbolic-box {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 9px;
+  border-radius: 9px;
+  background: var(--kbd-bg);
+  border: 1px solid var(--card-border);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.func-symbolic-box.hidden {
+  display: none;
+}
+
+.sym-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sym-row.hidden {
+  display: none;
+}
+
+.sym-key {
+  flex: 0 0 auto;
+  font-family: var(--font-math);
+  font-weight: 700;
+  color: var(--accent-y);
+  min-width: 34px;
+}
+
+.sym-val {
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .func-status {
@@ -923,6 +1026,10 @@ kbd {
 }
 
 @media (max-width: 1000px) {
+  .tool-sep {
+    display: none;
+  }
+
   .func-panel,
   .trial-panel {
     bottom: 12px;

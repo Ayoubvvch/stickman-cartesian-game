@@ -11,18 +11,23 @@
     CoordinateGrid,
     FunctionPlotter,
     ChallengeManager,
+    WebGL2EffectsRenderer,
+    MathAudioSynth,
     Stickman,
   } = MathStickGame;
 
   function boot() {
     const gridCanvas = document.getElementById('gridCanvas');
     const gridCtx = gridCanvas ? gridCanvas.getContext('2d', { alpha: false }) : null;
+    const glCanvas = document.getElementById('glCanvas');
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d', { alpha: true });
 
     const input = new InputManager();
     const particles = new ParticleSystem();
     const grid = new CoordinateGrid();
+    const glfx = new WebGL2EffectsRenderer(glCanvas);
+    const audioFx = new MathAudioSynth();
     const functions = new FunctionPlotter();
     const stickman = new Stickman(particles, functions);
     const challenges = new ChallengeManager(functions, stickman, particles);
@@ -33,7 +38,7 @@
       showProjections: true,
       showVelocity: false,
       showHelp: true,
-      showFuncPanel: true,
+      showFuncPanel: false,
       showTouchPad: false,
       camera: {
         x: 0,
@@ -77,8 +82,12 @@
     const btnDance = document.getElementById('btnDance');
     const btnAudio = document.getElementById('btnAudio');
     const btnFunc = document.getElementById('btnFunc');
+    const funcActiveDot = document.getElementById('funcActiveDot');
     const btnTrials = document.getElementById('btnTrials');
     const btnDerivOverlay = document.getElementById('btnDerivOverlay');
+    const btnIntegralOverlay = document.getElementById('btnIntegralOverlay');
+    const btnMarkersOverlay = document.getElementById('btnMarkersOverlay');
+    const btnFx = document.getElementById('btnFx');
     const btnTouchPad = document.getElementById('btnTouchPad');
     const btnTheme = document.getElementById('btnTheme');
     const btnHelp = document.getElementById('btnHelp');
@@ -91,6 +100,11 @@
     const funcForm = document.getElementById('funcForm');
     const funcInput = document.getElementById('funcInput');
     const funcPresetsEl = document.getElementById('funcPresets');
+    const funcSymbolicBox = document.getElementById('funcSymbolicBox');
+    const symDeriv1 = document.getElementById('symDeriv1');
+    const symDeriv2 = document.getElementById('symDeriv2');
+    const symIntegralRow = document.getElementById('symIntegralRow');
+    const symIntegralVal = document.getElementById('symIntegralVal');
     const funcStatus = document.getElementById('funcStatus');
 
     const trialPanel = document.getElementById('trialPanel');
@@ -176,6 +190,7 @@
         grid.invalidate();
       }
       grid.setViewportSize(w, h, dpr);
+      glfx.resize(w, h);
       wakeFrame();
     }
 
@@ -286,6 +301,7 @@
       input.triggerFreeFall();
     });
     btnDance.addEventListener('click', () => {
+      audioFx.unlock();
       honoredAudio.unlockFromGesture(stickman.danceStyle === 2 && !stickman.dancing);
       wakeFrame();
       input.triggerDance();
@@ -293,8 +309,17 @@
     btnAudio.addEventListener('click', () => {
       honoredAudio.unlockFromGesture(stickman.dancing && stickman.danceStyle === 2);
       honoredAudio.toggleMute();
+      audioFx.unlock();
       wakeFrame();
     });
+    if (btnFx) {
+      btnFx.addEventListener('click', () => {
+        glfx.setEnabled(!glfx.enabled);
+        syncFxButton();
+        wakeFrame();
+      });
+    }
+    document.addEventListener('pointerdown', () => audioFx.unlock(), { passive: true });
     btnTouchPad.addEventListener('click', () => setTouchPad(!state.showTouchPad));
     btnTheme.addEventListener('click', toggleTheme);
     btnHelp.addEventListener('click', () => setHelp(!state.showHelp));
@@ -328,13 +353,39 @@
       wakeFrame();
     }
 
-    function syncDerivButton() {
-      if (!btnDerivOverlay) return;
-      btnDerivOverlay.classList.toggle('active', functions.showDerivative);
-      btnDerivOverlay.setAttribute('aria-pressed', String(functions.showDerivative));
+    function syncOverlayToggleBtn(btn, isOn) {
+      if (!btn) return;
+      btn.classList.toggle('active', isOn);
+      btn.setAttribute('aria-pressed', String(isOn));
     }
 
-    let restoreFuncOnExitTrials = true;
+    function syncFuncOverlayButtons() {
+      syncOverlayToggleBtn(btnDerivOverlay, functions.showDerivative);
+      syncOverlayToggleBtn(btnIntegralOverlay, functions.showIntegral);
+      syncOverlayToggleBtn(btnMarkersOverlay, functions.showCriticalMarkers);
+      if (symIntegralRow) {
+        symIntegralRow.classList.toggle('hidden', !functions.showIntegral);
+      }
+    }
+
+    function syncFxButton() {
+      if (!btnFx) return;
+      if (!glfx.available) {
+        btnFx.disabled = true;
+        btnFx.classList.remove('active');
+        btnFx.setAttribute('aria-pressed', 'false');
+        btnFx.textContent = 'FX N/A';
+        btnFx.title = 'WebGL 2 unavailable on this device';
+        return;
+      }
+      btnFx.disabled = false;
+      btnFx.classList.toggle('active', glfx.enabled);
+      btnFx.setAttribute('aria-pressed', String(glfx.enabled));
+      btnFx.textContent = 'FX';
+    }
+
+    let restoreFuncOnExitTrials = false;
+    let restoreMarkersOnExitTrials = false;
     let lastTrialSig = '';
 
     function syncTrialUi(updateInput = false) {
@@ -438,6 +489,10 @@
       if (enabled === challenges.active) return;
       if (enabled) {
         restoreFuncOnExitTrials = state.showFuncPanel;
+        restoreMarkersOnExitTrials = functions.showCriticalMarkers;
+        if (restoreMarkersOnExitTrials) {
+          functions.setShowCriticalMarkers(false);
+        }
         if (state.showHelp) setHelp(false);
         if (state.showTouchPad && global.innerWidth <= 1000) setTouchPad(false);
         if (state.showFuncPanel) {
@@ -458,6 +513,10 @@
         syncTrialUi(true);
       } else {
         challenges.exit();
+        if (restoreMarkersOnExitTrials) {
+          functions.setShowCriticalMarkers(true);
+          restoreMarkersOnExitTrials = false;
+        }
         if (trialPanel) trialPanel.classList.add('hidden');
         if (btnTrials) {
           btnTrials.classList.remove('active');
@@ -479,6 +538,9 @@
         btnToggleFunc.setAttribute('aria-pressed', String(functions.enabled));
         btnToggleFunc.textContent = functions.enabled ? 'ON' : 'OFF';
       }
+      if (funcActiveDot) {
+        funcActiveDot.classList.toggle('is-on', functions.enabled);
+      }
       if (btnFunc) {
         btnFunc.dataset.funcEnabled = String(functions.enabled);
         btnFunc.dataset.funcExpr = functions.expression;
@@ -490,16 +552,33 @@
           chip.classList.toggle('active', isMatch);
         });
       }
+      if (funcSymbolicBox) {
+        const hasFormula = Boolean(!functions.error && (functions.deriv1Text || functions.deriv2Text));
+        funcSymbolicBox.classList.toggle('hidden', !hasFormula && !functions.showIntegral);
+      }
+      if (symDeriv1) {
+        symDeriv1.textContent = functions.error
+          ? '—'
+          : functions.deriv1Text || (functions.symbolicOk ? '0' : 'numeric finite diff');
+        symDeriv1.title = symDeriv1.textContent;
+      }
+      if (symDeriv2) {
+        symDeriv2.textContent = functions.error
+          ? '—'
+          : functions.deriv2Text || (functions.symbolicOk ? '0' : 'numeric h²');
+        symDeriv2.title = symDeriv2.textContent;
+      }
+      syncFuncOverlayButtons();
       if (funcStatus) {
         funcStatus.classList.remove('error', 'muted');
         if (functions.error) {
           funcStatus.textContent = `Error: ${functions.error}`;
           funcStatus.classList.add('error');
         } else if (!functions.enabled) {
-          funcStatus.textContent = `Hidden: y = ${functions.expression}`;
+          funcStatus.textContent = `OFF · y = ${functions.expression}`;
           funcStatus.classList.add('muted');
         } else {
-          funcStatus.textContent = `Active: y = ${functions.expression}`;
+          funcStatus.textContent = `ON · y = ${functions.expression}`;
         }
       }
     }
@@ -562,7 +641,23 @@
     if (btnDerivOverlay) {
       btnDerivOverlay.addEventListener('click', () => {
         functions.setShowDerivative(!functions.showDerivative);
-        syncDerivButton();
+        syncFuncOverlayButtons();
+        wakeFrame();
+      });
+    }
+
+    if (btnIntegralOverlay) {
+      btnIntegralOverlay.addEventListener('click', () => {
+        functions.setShowIntegral(!functions.showIntegral);
+        syncFuncControls();
+        wakeFrame();
+      });
+    }
+
+    if (btnMarkersOverlay) {
+      btnMarkersOverlay.addEventListener('click', () => {
+        functions.setShowCriticalMarkers(!functions.showCriticalMarkers);
+        syncFuncOverlayButtons();
         wakeFrame();
       });
     }
@@ -596,12 +691,19 @@
       });
     }
 
+    function runChallengeMarkPoint() {
+      const before = challenges.lockedTargets.size;
+      audioFx.unlock();
+      challenges.markPoint();
+      if (challenges.lockedTargets.size > before) {
+        audioFx.playLockPoint();
+      }
+      syncTrialUi();
+      wakeFrame();
+    }
+
     if (btnTrialMark) {
-      btnTrialMark.addEventListener('click', () => {
-        challenges.markPoint();
-        syncTrialUi();
-        wakeFrame();
-      });
+      btnTrialMark.addEventListener('click', runChallengeMarkPoint);
     }
 
     if (btnTrialHint) {
@@ -639,7 +741,7 @@
       });
     }
 
-    syncDerivButton();
+    syncFxButton();
     syncFuncControls();
 
     if (global.innerWidth <= 1000) {
@@ -650,15 +752,14 @@
     global.addEventListener('keydown', (e) => {
       if (isEditableTarget(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      audioFx.unlock();
       if (
         challenges.active &&
         (e.code === 'KeyB' ||
           (e.code === 'Enter' && challenges.getCurrentTrial().mode === 'lock-points'))
       ) {
         e.preventDefault();
-        challenges.markPoint();
-        syncTrialUi();
-        wakeFrame();
+        runChallengeMarkPoint();
         return;
       }
       const isDirectDance3 =
@@ -760,6 +861,7 @@
       vy: '',
       scale: '',
       stateLabel: '',
+      integral: '',
       dancing: null,
       audioUiKey: '',
       audioTime: '',
@@ -800,6 +902,20 @@
         elStateBadge.textContent = stateStr;
         hudCache.stateLabel = stateStr;
       }
+      if (symIntegralVal && state.showFuncPanel && functions.showIntegral) {
+        let areaStr = 'curve OFF';
+        if (functions.isActive()) {
+          const area = functions.computeIntegralTo(stickman.x);
+          areaStr = Number.isFinite(area)
+            ? `${area >= 0 ? '+' : ''}${area.toFixed(3)}  [0 → ${stickman.x.toFixed(2)}]`
+            : '—';
+        }
+        if (hudCache.integral !== areaStr) {
+          hudCache.integral = areaStr;
+          symIntegralVal.textContent = areaStr;
+        }
+      }
+
       if (hudCache.dancing !== stickman.dancing) {
         hudCache.dancing = stickman.dancing;
         btnDance.classList.toggle('active', stickman.dancing);
@@ -814,7 +930,7 @@
         btnAudio.classList.toggle('active', isPlayingUnmuted);
         btnAudio.classList.toggle('is-muted', audioSnap.muted);
         btnAudio.setAttribute('aria-pressed', String(audioSnap.muted));
-        const nextText = audioSnap.muted ? '🔇 Muted' : '🔊 Audio';
+        const nextText = audioSnap.muted ? '🔇' : '🔊';
         if (btnAudio.textContent !== nextText) {
           btnAudio.textContent = nextText;
         }
@@ -987,6 +1103,7 @@
         if (this.el) {
           this.el.muted = this.muted;
         }
+        audioFx.setMuted(this.muted);
       },
 
       getSnapshot() {
@@ -1098,12 +1215,21 @@
         syncTrialUi(true);
         frameInput.resetPressed = false;
       }
+      const prevLocked = challenges.active ? challenges.lockedTargets.size : 0;
+      const prevStar = challenges.active ? challenges.starCollected : false;
       stickman.update(dt, frameInput);
       if (challenges.active) {
         challenges.update(dt);
+        if (challenges.lockedTargets.size > prevLocked) {
+          audioFx.playLockPoint();
+        }
+        if (!prevStar && challenges.starCollected) {
+          audioFx.playStarClear();
+        }
         syncTrialUi();
       }
       particles.update(dt);
+      audioFx.update(stickman, dt);
       honoredAudio.sync(stickman.dancing && stickman.danceStyle === 2);
 
       // Camera smooth zoom & tracking
@@ -1174,12 +1300,13 @@
         idleSettleFrames--;
       }
 
-      // Render static Cartesian plane on #gridCanvas only when viewport/camera/theme changes,
-      // and dynamic overlays/stickman on transparent #gameCanvas.
+      // Render static Cartesian plane on #gridCanvas when viewport/camera/theme changes,
+      // optional GPU glow/shaders on #glCanvas, and dynamic overlays/stickman on #gameCanvas.
       const theme = THEMES[state.themeName];
       if (gridCtx) {
         grid.render(gridCtx, state.camera, theme);
       }
+      glfx.render(stickman, state.camera, grid, theme, now * 0.001);
 
       ctx.save();
       ctx.setTransform(1, 0, 0, 1, 0, 0);

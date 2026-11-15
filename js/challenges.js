@@ -338,7 +338,8 @@
       if (!this.active) return;
       this.active = false;
       this.functions.setCustomSampler(null, '');
-      this.functions.setExpression(this._savedFreeExpr, this._savedFreeEnabled);
+      this.functions.setExpression(this._savedFreeExpr, false);
+      this.functions.setEnabled(this._savedFreeEnabled);
       this.stickman.reset();
       this.particles.clear();
     }

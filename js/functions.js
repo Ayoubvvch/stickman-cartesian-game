@@ -2,270 +2,10 @@
   'use strict';
 
   const MathStickGame = (global.MathStickGame = global.MathStickGame || {});
-  const { utils } = MathStickGame;
-
-  const MATH_FUNCS = {
-    sin: Math.sin,
-    cos: Math.cos,
-    tan: Math.tan,
-    abs: Math.abs,
-    sqrt: Math.sqrt,
-    ln: Math.log,
-    log: Math.log10 ? Math.log10 : (v) => Math.log(v) / Math.LN10,
-    exp: Math.exp,
-    floor: Math.floor,
-    ceil: Math.ceil,
-    round: Math.round,
-    sinh: Math.sinh,
-    cosh: Math.cosh,
-    tanh: Math.tanh,
-    sign: Math.sign,
-  };
-
-  const MATH_CONSTS = {
-    pi: Math.PI,
-    e: Math.E,
-  };
-
-  function tokenize(expr) {
-    const tokens = [];
-    const s = expr.trim();
-    let i = 0;
-
-    while (i < s.length) {
-      const ch = s[i];
-      if (ch === ' ' || ch === '\t' || ch === '\n') {
-        i++;
-        continue;
-      }
-
-      if ((ch >= '0' && ch <= '9') || (ch === '.' && i + 1 < s.length && s[i + 1] >= '0' && s[i + 1] <= '9')) {
-        let end = i;
-        let seenDot = false;
-        while (end < s.length) {
-          const c = s[end];
-          if (c >= '0' && c <= '9') {
-            end++;
-          } else if (c === '.' && !seenDot) {
-            seenDot = true;
-            end++;
-          } else {
-            break;
-          }
-        }
-        if (
-          end < s.length &&
-          (s[end] === 'e' || s[end] === 'E') &&
-          (s[end + 1] === '+' || s[end + 1] === '-' || (s[end + 1] >= '0' && s[end + 1] <= '9'))
-        ) {
-          let expEnd = end + 1;
-          if (s[expEnd] === '+' || s[expEnd] === '-') expEnd++;
-          let hasDigit = false;
-          while (expEnd < s.length && s[expEnd] >= '0' && s[expEnd] <= '9') {
-            expEnd++;
-            hasDigit = true;
-          }
-          if (hasDigit) end = expEnd;
-        }
-        const num = Number(s.slice(i, end));
-        if (!Number.isFinite(num)) {
-          throw new Error('Invalid number');
-        }
-        tokens.push({ type: 'num', value: num });
-        i = end;
-        continue;
-      }
-
-      if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch === 'π') {
-        if (ch === 'π') {
-          tokens.push({ type: 'var', value: 'pi' });
-          i++;
-          continue;
-        }
-        let end = i + 1;
-        while (
-          end < s.length &&
-          ((s[end] >= 'a' && s[end] <= 'z') || (s[end] >= 'A' && s[end] <= 'Z'))
-        ) {
-          end++;
-        }
-        const word = s.slice(i, end).toLowerCase();
-        if (word === 'x') {
-          tokens.push({ type: 'var', value: 'x' });
-        } else if (Object.prototype.hasOwnProperty.call(MATH_CONSTS, word)) {
-          tokens.push({ type: 'var', value: word });
-        } else if (Object.prototype.hasOwnProperty.call(MATH_FUNCS, word)) {
-          tokens.push({ type: 'func', value: word });
-        } else {
-          throw new Error(`Unknown identifier: ${word}`);
-        }
-        i = end;
-        continue;
-      }
-
-      if (ch === '+' || ch === '-' || ch === '*' || ch === '/' || ch === '^') {
-        tokens.push({ type: 'op', value: ch });
-        i++;
-        continue;
-      }
-      if (ch === '×') {
-        tokens.push({ type: 'op', value: '*' });
-        i++;
-        continue;
-      }
-      if (ch === '÷') {
-        tokens.push({ type: 'op', value: '/' });
-        i++;
-        continue;
-      }
-      if (ch === '−') {
-        tokens.push({ type: 'op', value: '-' });
-        i++;
-        continue;
-      }
-      if (ch === '(' || ch === ')') {
-        tokens.push({ type: ch, value: ch });
-        i++;
-        continue;
-      }
-
-      throw new Error(`Unexpected symbol "${ch}"`);
-    }
-
-    // Insert implicit multiplication tokens (e.g., 2x, 3sin(x), (x+1)(x-1), x pi)
-    const out = [];
-    for (let t = 0; t < tokens.length; t++) {
-      const curr = tokens[t];
-      if (t > 0) {
-        const prev = tokens[t - 1];
-        const prevIsValue = prev.type === 'num' || prev.type === 'var' || prev.type === ')';
-        const currStartsFactor =
-          curr.type === 'num' || curr.type === 'var' || curr.type === 'func' || curr.type === '(';
-        if (prevIsValue && currStartsFactor) {
-          out.push({ type: 'op', value: '*' });
-        }
-      }
-      out.push(curr);
-    }
-
-    return out;
-  }
+  const { utils, MathCAS } = MathStickGame;
 
   function compileExpression(rawExpr) {
-    let cleaned = String(rawExpr || '').trim();
-    cleaned = cleaned.replace(/^y\s*=\s*/i, '').replace(/^f\s*\(\s*x\s*\)\s*=\s*/i, '');
-    if (!cleaned) {
-      return { ok: false, error: 'Enter a formula in x' };
-    }
-
-    let tokens;
-    try {
-      tokens = tokenize(cleaned);
-    } catch (err) {
-      return { ok: false, error: err.message };
-    }
-    if (tokens.length === 0) {
-      return { ok: false, error: 'Empty formula' };
-    }
-
-    let pos = 0;
-    const peek = () => tokens[pos] || null;
-    const consume = () => tokens[pos++];
-
-    function parseExpr() {
-      let node = parseTerm();
-      while (peek() && peek().type === 'op' && (peek().value === '+' || peek().value === '-')) {
-        const op = consume().value;
-        const right = parseTerm();
-        const left = node;
-        node = op === '+' ? (x) => left(x) + right(x) : (x) => left(x) - right(x);
-      }
-      return node;
-    }
-
-    function parseTerm() {
-      let node = parseUnary();
-      while (peek() && peek().type === 'op' && (peek().value === '*' || peek().value === '/')) {
-        const op = consume().value;
-        const right = parseUnary();
-        const left = node;
-        node = op === '*' ? (x) => left(x) * right(x) : (x) => left(x) / right(x);
-      }
-      return node;
-    }
-
-    function parseUnary() {
-      if (peek() && peek().type === 'op' && (peek().value === '+' || peek().value === '-')) {
-        const op = consume().value;
-        const operand = parseUnary();
-        return op === '-' ? (x) => -operand(x) : operand;
-      }
-      return parsePower();
-    }
-
-    function parsePower() {
-      const base = parsePrimary();
-      if (peek() && peek().type === 'op' && peek().value === '^') {
-        consume();
-        const exponent = parseUnary();
-        return (x) => Math.pow(base(x), exponent(x));
-      }
-      return base;
-    }
-
-    function parsePrimary() {
-      const tok = peek();
-      if (!tok) {
-        throw new Error('Unexpected end of formula');
-      }
-      if (tok.type === 'num') {
-        consume();
-        const val = tok.value;
-        return () => val;
-      }
-      if (tok.type === 'var') {
-        consume();
-        if (tok.value === 'x') return (x) => x;
-        const c = MATH_CONSTS[tok.value];
-        return () => c;
-      }
-      if (tok.type === 'func') {
-        consume();
-        const fn = MATH_FUNCS[tok.value];
-        if (!peek() || peek().type !== '(') {
-          throw new Error(`Expected "(" after ${tok.value}`);
-        }
-        consume();
-        const arg = parseExpr();
-        if (!peek() || peek().type !== ')') {
-          throw new Error(`Missing ")" after ${tok.value}(...)`);
-        }
-        consume();
-        return (x) => fn(arg(x));
-      }
-      if (tok.type === '(') {
-        consume();
-        const inner = parseExpr();
-        if (!peek() || peek().type !== ')') {
-          throw new Error('Missing closing ")"');
-        }
-        consume();
-        return inner;
-      }
-      throw new Error(`Unexpected token "${tok.value}"`);
-    }
-
-    try {
-      const fn = parseExpr();
-      if (pos < tokens.length) {
-        return { ok: false, error: `Unexpected "${tokens[pos].value}"` };
-      }
-      // Verify callable without runtime throws on sample probe
-      fn(0);
-      return { ok: true, fn, expression: cleaned };
-    } catch (err) {
-      return { ok: false, error: err.message };
-    }
+    return MathCAS.compileExpression(rawExpr);
   }
 
   const PRESETS = [
@@ -275,15 +15,28 @@
     { id: 'abs', label: 'Half-Pipe', expr: 'abs(0.45 * x)' },
     { id: 'coaster', label: 'Roller Coaster', expr: '1.5 * sin(0.55 * x) + 0.7 * cos(1.3 * x) + 3.0' },
     { id: 'ramp', label: 'Ramp', expr: '0.35 * x + 1.5' },
+    { id: 'damped', label: 'Damped Wave', expr: '2.4 * exp(-0.08 * x^2) * cos(1.35 * x) + 2.2' },
+    { id: 'cubic', label: 'Cubic S-Curve', expr: '0.07 * x^3 - 0.65 * x + 2.2' },
+    { id: 'sinc', label: 'Sinc Pulse', expr: '3.0 * sin(1.4 * x) / (1.4 * x) + 1.4' },
   ];
 
   class FunctionPlotter {
     constructor() {
       this.presets = PRESETS;
-      this.enabled = true;
+      // Functions start OFF by default on launch
+      this.enabled = false;
       this.showDerivative = false;
+      this.showIntegral = false;
+      this.showCriticalMarkers = false;
+
       this.expression = PRESETS[0].expr;
       this.evalFn = null;
+      this.deriv1Fn = null;
+      this.deriv2Fn = null;
+      this.deriv1Text = '';
+      this.deriv2Text = '';
+      this.symbolicOk = false;
+
       this.customSampler = null;
       this.customTag = '';
       this.error = '';
@@ -291,13 +44,18 @@
       this._cacheKey = '';
       this._cachedPaths = [];
       this._cachedDerivPaths = [];
+      this._markersCacheKey = '';
+      this._cachedMarkers = [];
+      this._integralCacheKey = '';
+      this._cachedIntegral = 0;
 
-      this.setExpression(this.expression, true);
+      this.setExpression(this.expression, false);
     }
 
     setEnabled(enabled) {
       this.enabled = Boolean(enabled);
       this._cacheKey = '';
+      this._integralCacheKey = '';
     }
 
     setShowDerivative(enabled) {
@@ -305,25 +63,51 @@
       this._cacheKey = '';
     }
 
+    setShowIntegral(enabled) {
+      this.showIntegral = Boolean(enabled);
+      this._integralCacheKey = '';
+    }
+
+    setShowCriticalMarkers(enabled) {
+      this.showCriticalMarkers = Boolean(enabled);
+      this._markersCacheKey = '';
+    }
+
     setCustomSampler(samplerFn, tag = '') {
       this.customSampler = typeof samplerFn === 'function' ? samplerFn : null;
       this.customTag = tag || '';
       this._cacheKey = '';
+      this._markersCacheKey = '';
+      this._integralCacheKey = '';
     }
 
     setExpression(rawExpr, autoEnable = true) {
       const compiled = compileExpression(rawExpr);
       if (!compiled.ok) {
         this.error = compiled.error;
+        this.deriv1Fn = null;
+        this.deriv2Fn = null;
+        this.deriv1Text = '';
+        this.deriv2Text = '';
+        this.symbolicOk = false;
         return { ok: false, error: compiled.error };
       }
+
       this.expression = compiled.expression;
       this.evalFn = compiled.fn;
+      this.deriv1Fn = compiled.deriv1Fn || null;
+      this.deriv2Fn = compiled.deriv2Fn || null;
+      this.deriv1Text = compiled.deriv1Text || '';
+      this.deriv2Text = compiled.deriv2Text || '';
+      this.symbolicOk = Boolean(compiled.symbolicOk);
       this.error = '';
+
       if (autoEnable) {
         this.enabled = true;
       }
       this._cacheKey = '';
+      this._markersCacheKey = '';
+      this._integralCacheKey = '';
       return { ok: true, expression: this.expression };
     }
 
@@ -344,38 +128,77 @@
       return y;
     }
 
+    evaluateDeriv1(x) {
+      if (!this.isActive()) return NaN;
+      if (!this.customSampler && typeof this.deriv1Fn === 'function') {
+        const d = this.deriv1Fn(x);
+        if (Number.isFinite(d) && Math.abs(d) <= 40) return d;
+      }
+      const h = 0.004;
+      const ym = this.evaluateY(x - h);
+      const yp = this.evaluateY(x + h);
+      if (Number.isFinite(ym) && Number.isFinite(yp)) {
+        const d = (yp - ym) / (2 * h);
+        return Number.isFinite(d) && Math.abs(d) <= 40 ? d : NaN;
+      }
+      const y0 = this.evaluateY(x);
+      if (Number.isFinite(yp) && Number.isFinite(y0)) {
+        const d = (yp - y0) / h;
+        return Number.isFinite(d) && Math.abs(d) <= 40 ? d : NaN;
+      }
+      if (Number.isFinite(ym) && Number.isFinite(y0)) {
+        const d = (y0 - ym) / h;
+        return Number.isFinite(d) && Math.abs(d) <= 40 ? d : NaN;
+      }
+      return NaN;
+    }
+
+    evaluateDeriv2(x) {
+      if (!this.isActive()) return NaN;
+      if (!this.customSampler && typeof this.deriv2Fn === 'function') {
+        const d2 = this.deriv2Fn(x);
+        if (Number.isFinite(d2)) return utils.clamp(d2, -30, 30);
+      }
+      const h = 0.006;
+      const ym = this.evaluateY(x - h);
+      const y0 = this.evaluateY(x);
+      const yp = this.evaluateY(x + h);
+      if (Number.isFinite(ym) && Number.isFinite(y0) && Number.isFinite(yp)) {
+        const d2 = (yp - 2 * y0 + ym) / (h * h);
+        return Number.isFinite(d2) ? utils.clamp(d2, -30, 30) : 0;
+      }
+      return 0;
+    }
+
     sample(x) {
       const y = this.evaluateY(x);
       if (!Number.isFinite(y)) {
         return { valid: false, y: NaN, dy: 0, d2y: 0, angle: 0 };
       }
-      const h = 0.004;
-      const ym = this.evaluateY(x - h);
-      const yp = this.evaluateY(x + h);
 
-      let dy = 0;
-      let d2y = 0;
-      if (Number.isFinite(ym) && Number.isFinite(yp)) {
-        dy = (yp - ym) / (2 * h);
-        d2y = (yp - 2 * y + ym) / (h * h);
-      } else if (Number.isFinite(yp)) {
-        dy = (yp - y) / h;
-      } else if (Number.isFinite(ym)) {
-        dy = (y - ym) / h;
-      }
-
+      const dy = this.evaluateDeriv1(x);
       if (!Number.isFinite(dy) || Math.abs(dy) > 40) {
         return { valid: false, y: NaN, dy: 0, d2y: 0, angle: 0 };
       }
-      if (!Number.isFinite(d2y)) d2y = 0;
+      const d2y = this.evaluateDeriv2(x);
 
       return {
         valid: true,
         y,
         dy,
-        d2y: utils.clamp(d2y, -30, 30),
+        d2y: Number.isFinite(d2y) ? utils.clamp(d2y, -30, 30) : 0,
         angle: Math.atan2(dy, 1),
       };
+    }
+
+    computeIntegralTo(xEnd) {
+      if (!this.isActive()) return NaN;
+      const key = `${this.expression}|${this.customTag}|${xEnd.toFixed(2)}`;
+      if (key === this._integralCacheKey) return this._cachedIntegral;
+      this._integralCacheKey = key;
+      const segs = Math.min(96, Math.max(24, Math.ceil(Math.abs(xEnd) * 10)));
+      this._cachedIntegral = MathCAS.integrateSimpson((t) => this.evaluateY(t), 0, xEnd, segs);
+      return this._cachedIntegral;
     }
 
     _buildSampledPaths(evalScalarFn, camera, gridRenderer) {
@@ -391,7 +214,7 @@
       let currentPath = null;
       let pointCount = 0;
       let prevY = NaN;
-      const stepPx = 6;
+      const stepPx = 5;
       const maxJumpUnits = Math.max(4, (h / ppu) * 0.9);
       const hasPath2D = typeof Path2D === 'function';
 
@@ -457,21 +280,224 @@
       );
 
       if (this.showDerivative) {
-        const hDeriv = 0.005;
         this._cachedDerivPaths = this._buildSampledPaths(
-          (wx) => {
-            const ym = this.evaluateY(wx - hDeriv);
-            const yp = this.evaluateY(wx + hDeriv);
-            if (!Number.isFinite(ym) || !Number.isFinite(yp)) return NaN;
-            const d = (yp - ym) / (2 * hDeriv);
-            return Number.isFinite(d) && Math.abs(d) <= 40 ? d : NaN;
-          },
+          (wx) => this.evaluateDeriv1(wx),
           camera,
           gridRenderer
         );
       } else {
         this._cachedDerivPaths = [];
       }
+    }
+
+    _ensureCriticalMarkers(camera, gridRenderer) {
+      if (!this.showCriticalMarkers || this.customSampler) {
+        this._cachedMarkers = [];
+        return;
+      }
+      const key = `${this.expression}|${camera.x.toFixed(3)}|${camera.ppu.toFixed(2)}|${gridRenderer.width}`;
+      if (key === this._markersCacheKey) return;
+      this._markersCacheKey = key;
+
+      const halfWorldW = (gridRenderer.width * 0.5) / camera.ppu;
+      const xMin = camera.x - halfWorldW;
+      const xMax = camera.x + halfWorldW;
+      const step = Math.max(0.06, (xMax - xMin) / 140);
+
+      const markers = [];
+      let prevX = xMin;
+      let prevY = this.evaluateY(prevX);
+      let prevD1 = this.evaluateDeriv1(prevX);
+
+      const refineBisect = (fn, a, b) => {
+        let lo = a;
+        let hi = b;
+        let flo = fn(lo);
+        for (let iter = 0; iter < 8; iter++) {
+          const mid = (lo + hi) * 0.5;
+          const fmid = fn(mid);
+          if (!Number.isFinite(fmid)) return mid;
+          if (flo * fmid <= 0) {
+            hi = mid;
+          } else {
+            lo = mid;
+            flo = fmid;
+          }
+        }
+        return (lo + hi) * 0.5;
+      };
+
+      for (let x = xMin + step; x <= xMax && markers.length < 24; x += step) {
+        const y = this.evaluateY(x);
+        const d1 = this.evaluateDeriv1(x);
+
+        if (Number.isFinite(prevY) && Number.isFinite(y) && Math.abs(y - prevY) < 4) {
+          if (prevY * y <= 0 && (Math.abs(prevY) > 1e-4 || Math.abs(y) > 1e-4)) {
+            const rx = refineBisect((t) => this.evaluateY(t), prevX, x);
+            const ry = this.evaluateY(rx);
+            if (Number.isFinite(ry) && Math.abs(ry) < 0.15) {
+              markers.push({ kind: 'root', x: rx, y: 0 });
+            }
+          }
+        }
+
+        if (Number.isFinite(prevD1) && Number.isFinite(d1) && Math.abs(d1 - prevD1) < 6) {
+          if (prevD1 * d1 <= 0 && (Math.abs(prevD1) > 1e-4 || Math.abs(d1) > 1e-4)) {
+            const cx = refineBisect((t) => this.evaluateDeriv1(t), prevX, x);
+            const cy = this.evaluateY(cx);
+            const d2 = this.evaluateDeriv2(cx);
+            if (Number.isFinite(cy)) {
+              markers.push({
+                kind: d2 < -0.05 ? 'max' : d2 > 0.05 ? 'min' : 'crit',
+                x: cx,
+                y: cy,
+              });
+            }
+          }
+        }
+
+        prevX = x;
+        prevY = y;
+        prevD1 = d1;
+      }
+
+      this._cachedMarkers = markers;
+    }
+
+    _renderIntegralArea(ctx, camera, gridRenderer, theme, stickman) {
+      if (!this.showIntegral || !stickman || this.customSampler) return;
+      const xEnd = stickman.x;
+      if (Math.abs(xEnd) < 0.04) return;
+
+      const isBlack = theme.bg === '#000000';
+      const a = Math.min(0, xEnd);
+      const b = Math.max(0, xEnd);
+      const steps = Math.min(120, Math.max(18, Math.ceil((b - a) * camera.ppu / 6)));
+      const dx = (b - a) / steps;
+      const axisY = gridRenderer.worldToScreen(0, 0, camera).y;
+
+      ctx.save();
+      for (let i = 0; i < steps; i++) {
+        const x0 = a + i * dx;
+        const x1 = x0 + dx;
+        const xm = (x0 + x1) * 0.5;
+        const y0 = this.evaluateY(x0);
+        const y1 = this.evaluateY(x1);
+        const ym = this.evaluateY(xm);
+        if (!Number.isFinite(y0) || !Number.isFinite(y1) || !Number.isFinite(ym)) continue;
+
+        const p0 = gridRenderer.worldToScreen(x0, y0, camera);
+        const p1 = gridRenderer.worldToScreen(x1, y1, camera);
+
+        ctx.beginPath();
+        ctx.moveTo(p0.x, axisY);
+        ctx.lineTo(p0.x, p0.y);
+        ctx.lineTo(p1.x, p1.y);
+        ctx.lineTo(p1.x, axisY);
+        ctx.closePath();
+
+        if (ym >= 0) {
+          ctx.fillStyle = isBlack ? 'rgba(56, 189, 248, 0.16)' : 'rgba(37, 99, 235, 0.14)';
+        } else {
+          ctx.fillStyle = isBlack ? 'rgba(255, 77, 109, 0.18)' : 'rgba(220, 38, 38, 0.14)';
+        }
+        ctx.fill();
+
+        if (i % 3 === 0) {
+          ctx.strokeStyle = ym >= 0
+            ? (isBlack ? 'rgba(56, 189, 248, 0.28)' : 'rgba(37, 99, 235, 0.25)')
+            : (isBlack ? 'rgba(255, 77, 109, 0.28)' : 'rgba(220, 38, 38, 0.25)');
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      }
+
+      // Vertical boundary line at current stickman x
+      const yEdge = this.evaluateY(xEnd);
+      if (Number.isFinite(yEdge)) {
+        const pEdge = gridRenderer.worldToScreen(xEnd, yEdge, camera);
+        ctx.strokeStyle = isBlack ? 'rgba(56, 189, 248, 0.72)' : 'rgba(37, 99, 235, 0.72)';
+        ctx.lineWidth = 1.6;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(pEdge.x, axisY);
+        ctx.lineTo(pEdge.x, pEdge.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      const areaVal = this.computeIntegralTo(xEnd);
+      if (Number.isFinite(areaVal)) {
+        const pLabel = gridRenderer.worldToScreen(xEnd * 0.5, 0, camera);
+        const text = `∫₀^(${xEnd.toFixed(2)}) f(t)dt = ${areaVal.toFixed(3)}`;
+        ctx.direction = 'ltr';
+        ctx.font = "700 11.5px 'Cascadia Mono', 'Consolas', monospace";
+        const tw = ctx.measureText(text).width;
+        const bx = pLabel.x - tw * 0.5 - 8;
+        const by = utils.clamp(axisY + 12, 54, gridRenderer.height - 40);
+        ctx.fillStyle = theme.coordTagBg;
+        ctx.strokeStyle = theme.coordTagBorder;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        if (typeof ctx.roundRect === 'function') {
+          ctx.roundRect(bx, by, tw + 16, 22, 7);
+        } else {
+          ctx.rect(bx, by, tw + 16, 22);
+        }
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = areaVal >= 0 ? theme.vecJ : theme.vecI;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, pLabel.x, by + 11);
+      }
+
+      ctx.restore();
+    }
+
+    _renderCriticalMarkers(ctx, camera, gridRenderer, theme) {
+      this._ensureCriticalMarkers(camera, gridRenderer);
+      if (this._cachedMarkers.length === 0) return;
+
+      const isBlack = theme.bg === '#000000';
+      ctx.save();
+      ctx.direction = 'ltr';
+      ctx.font = "600 10.5px 'Cascadia Mono', 'Consolas', monospace";
+
+      for (const m of this._cachedMarkers) {
+        const sp = gridRenderer.worldToScreen(m.x, m.y, camera);
+        if (sp.x < -30 || sp.x > gridRenderer.width + 30 || sp.y < -30 || sp.y > gridRenderer.height + 30) {
+          continue;
+        }
+        let col = '#facc15';
+        let tag = 'crit';
+        if (m.kind === 'root') {
+          col = isBlack ? '#f472b6' : '#db2777';
+          tag = 'root';
+        } else if (m.kind === 'max') {
+          col = isBlack ? '#4ade80' : '#059669';
+          tag = 'max';
+        } else if (m.kind === 'min') {
+          col = isBlack ? '#fb923c' : '#ea580c';
+          tag = 'min';
+        }
+
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, 4.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = theme.bg;
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+
+        ctx.fillStyle = col;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = m.kind === 'min' ? 'top' : 'bottom';
+        const dyOff = m.kind === 'min' ? 8 : -8;
+        ctx.fillText(`${tag}(${m.x.toFixed(2)}, ${m.y.toFixed(2)})`, sp.x, sp.y + dyOff);
+      }
+      ctx.restore();
     }
 
     _strokePaths(ctx, paths, lineWidth, strokeStyle, compositeOp = 'source-over', dash = []) {
@@ -500,6 +526,8 @@
     render(ctx, camera, gridRenderer, theme, stickman) {
       if (!this.isActive()) return;
 
+      this._renderIntegralArea(ctx, camera, gridRenderer, theme, stickman);
+
       this._ensureCachedPaths(camera, gridRenderer);
       const isBlack = theme.bg === '#000000';
 
@@ -507,7 +535,6 @@
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
-      // Optional y = f'(x) live derivative curve overlay
       if (this.showDerivative && this._cachedDerivPaths.length > 0) {
         const derivColor = isBlack ? '#22c55e' : '#059669';
         this._strokePaths(
@@ -520,7 +547,6 @@
         );
       }
 
-      // Soft aura outer glow + crisp core curve (zero shadowBlur!)
       this._strokePaths(
         ctx,
         this._cachedPaths,
@@ -530,18 +556,18 @@
       );
       this._strokePaths(ctx, this._cachedPaths, 2.6, theme.funcStroke, 'source-over');
 
-      // Live tangent vector, slope f'(x), & curvature f''(x) when surfing the curve
+      this._renderCriticalMarkers(ctx, camera, gridRenderer, theme);
+
       if (stickman && stickman.surfingCurve) {
         const pt = gridRenderer.worldToScreen(stickman.x, stickman.y, camera);
         const angle = stickman.curveSlopeAngle;
         const tanDx = Math.cos(angle);
-        const tanDy = -Math.sin(angle); // screen y is inverted
+        const tanDy = -Math.sin(angle);
         const halfLen = 54;
         const curSample = this.sample(stickman.x);
         const dy = curSample.valid ? curSample.dy : Math.tan(angle);
         const d2y = curSample.valid ? curSample.d2y : 0;
 
-        // Vertical connector to the live derivative curve point (x, f'(x))
         if (this.showDerivative && Number.isFinite(dy)) {
           const dPt = gridRenderer.worldToScreen(stickman.x, dy, camera);
           ctx.strokeStyle = isBlack ? 'rgba(34, 197, 94, 0.55)' : 'rgba(5, 150, 105, 0.55)';

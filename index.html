@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Stickman · Orthonormal Cartesian Frame</title>
-  <link rel="stylesheet" href="style.css?v=opt1" />
+  <title>Stickman · Orthonormal Cartesian Frame v2.0</title>
+  <link rel="stylesheet" href="style.css?v=2.0.0" />
 </head>
 <body class="theme-black">
   <div id="app">
     <canvas id="gridCanvas" aria-hidden="true"></canvas>
+    <canvas id="glCanvas" aria-hidden="true"></canvas>
     <canvas id="gameCanvas" aria-label="Playfield - Orthonormal Cartesian Coordinate System"></canvas>
 
     <!-- Top HUD Bar -->
@@ -47,23 +48,47 @@
         </div>
       </section>
 
-      <!-- Toolbar & Input Status -->
+      <!-- Organized Toolbar & Input Status -->
       <div class="hud-right-stack">
-        <nav class="hud-card toolbar-card" aria-label="View Controls">
-          <button id="btnZoomOut" class="tool-btn" title="Zoom Out (-)" aria-label="Zoom Out">−</button>
-          <button id="btnZoomIn" class="tool-btn" title="Zoom In (+)" aria-label="Zoom In">+</button>
-          <button id="btnReset" class="tool-btn" title="Reset to Origin O(0,0) (R)" aria-label="Reset to O(0, 0)">O(0,0)</button>
-          <button id="btnFollow" class="tool-btn active" title="Auto-Follow Camera (C)" aria-pressed="true">Follow</button>
-          <button id="btnProjections" class="tool-btn active" title="Show (x, y) Projections (P)" aria-pressed="true">Projections</button>
-          <button id="btnVelocity" class="tool-btn" title="Show Velocity Vector v (V)" aria-pressed="false">Vector <span class="vec">v</span></button>
-          <button id="btnFreeFall" class="tool-btn" title="Drop from Altitude for Free Fall (G)">Free Fall</button>
-          <button id="btnFunc" class="tool-btn active" title="Toggle Function Plotter Panel" aria-pressed="true">f(x) Surf</button>
-          <button id="btnTrials" class="tool-btn" title="Derivative Mastery Challenges" aria-pressed="false">Trials</button>
-          <button id="btnDance" class="tool-btn" title="Toggle Dance (Z)" aria-pressed="false">Dance</button>
-          <button id="btnAudio" class="tool-btn" title="Mute/Unmute Honored One Audio (M)" aria-pressed="false" aria-label="Dance 3 Audio" data-audio-state="idle">🔊 Audio</button>
-          <button id="btnTouchPad" class="tool-btn" title="Toggle On-Screen Touch Controls" aria-pressed="false">Touch Pad</button>
-          <button id="btnTheme" class="tool-btn" title="Toggle Theme (T)" aria-label="Toggle Theme">☀️</button>
-          <button id="btnHelp" class="tool-btn active" title="Controls Guide (H)" aria-pressed="true">?</button>
+        <nav class="hud-card toolbar-card" aria-label="Organized Controls">
+          <!-- Group 1: Camera & View -->
+          <div class="tool-group" role="group" aria-label="Camera">
+            <button id="btnZoomOut" class="tool-btn tool-icon" title="Zoom Out (-)" aria-label="Zoom Out">−</button>
+            <button id="btnZoomIn" class="tool-btn tool-icon" title="Zoom In (+)" aria-label="Zoom In">+</button>
+            <button id="btnReset" class="tool-btn" title="Reset to Origin O(0,0) (R)" aria-label="Reset to O(0, 0)">O(0,0)</button>
+            <button id="btnFollow" class="tool-btn active" title="Auto-Follow Camera (C)" aria-pressed="true">Follow</button>
+          </div>
+
+          <span class="tool-sep" aria-hidden="true"></span>
+
+          <!-- Group 2: Math & Calculus -->
+          <div class="tool-group" role="group" aria-label="Math & Calculus">
+            <button id="btnProjections" class="tool-btn active" title="Show (x, y) Projections (P)" aria-pressed="true">Proj</button>
+            <button id="btnVelocity" class="tool-btn" title="Show Velocity Vector v (V)" aria-pressed="false"><span class="vec">v</span></button>
+            <button id="btnFunc" class="tool-btn" title="Open Function Lab f(x) (Off by default)" aria-pressed="false">
+              <span id="funcActiveDot" class="func-active-dot" aria-hidden="true"></span>f(x)
+            </button>
+            <button id="btnTrials" class="tool-btn tool-trials" title="Derivative Mastery Challenges" aria-pressed="false">Trials</button>
+          </div>
+
+          <span class="tool-sep" aria-hidden="true"></span>
+
+          <!-- Group 3: Stickman Actions & Audio -->
+          <div class="tool-group" role="group" aria-label="Actions">
+            <button id="btnFreeFall" class="tool-btn" title="Drop from Altitude for Free Fall (G)">Drop</button>
+            <button id="btnDance" class="tool-btn" title="Toggle Dance (Z · 1/2/3)" aria-pressed="false">Dance</button>
+            <button id="btnAudio" class="tool-btn" title="Mute/Unmute Audio & Synth (M)" aria-pressed="false" aria-label="Audio" data-audio-state="idle">🔊</button>
+          </div>
+
+          <span class="tool-sep" aria-hidden="true"></span>
+
+          <!-- Group 4: Display & Help -->
+          <div class="tool-group" role="group" aria-label="Interface">
+            <button id="btnFx" class="tool-btn active" title="Toggle WebGL 2 Shader Effects (FX)" aria-pressed="true">FX</button>
+            <button id="btnTouchPad" class="tool-btn" title="Toggle On-Screen Touch Controls" aria-pressed="false">Touch</button>
+            <button id="btnTheme" class="tool-btn tool-icon" title="Toggle Theme (T)" aria-label="Toggle Theme">☀️</button>
+            <button id="btnHelp" class="tool-btn tool-icon active" title="Controls Guide (H)" aria-pressed="true">?</button>
+          </div>
         </nav>
 
         <!-- Input Device Status -->
@@ -76,7 +101,6 @@
             <span class="status-dot" id="gpDot"></span>
             <span id="gpLabel">Controller: Disconnected</span>
           </div>
-          <!-- Mini live gamepad visualizer when connected -->
           <div id="gpMonitor" class="gp-monitor hidden" aria-hidden="true">
             <div class="gp-stick-box">
               <div class="gp-stick-dot" id="gpStickDot"></div>
@@ -96,7 +120,7 @@
     <!-- Collapsible Controls Legend -->
     <aside id="helpPanel" class="hud-card help-panel" aria-label="Controls Guide">
       <div class="help-header">
-        <strong>Movement Controls</strong>
+        <strong>Movement & Math Controls</strong>
         <button id="btnCloseHelp" class="close-mini" aria-label="Close">×</button>
       </div>
       <div class="help-columns">
@@ -107,13 +131,11 @@
             <li><kbd>Shift</kbd> + Move : Sprint (or fast climb / descend)</li>
             <li><kbd>Space</kbd> or <kbd>W</kbd> / <kbd>↑</kbd> : Jump (double jump)</li>
             <li><kbd>Q</kbd> (or <kbd>W</kbd>/<kbd>↑</kbd> at x = 0) : Climb y-axis</li>
-            <li><kbd>G</kbd> : Drop from high altitude (Free Fall) — <kbd>↓</kbd> Dive / <kbd>↑</kbd> Brake</li>
-            <li><b>y = f(x) Curves</b> : Land or walk onto curve to surf · <kbd>S</kbd> tuck · <kbd>S</kbd>+<kbd>Space</kbd> drop</li>
-            <li><b>Trials Mode</b> : Calculus challenges (<kbd>B</kbd> Lock critical/inflection point · <kbd>f'(x)</kbd> overlay)</li>
-            <li><kbd>Z</kbd> : Dance (<kbd>1</kbd> Gojo Purple · <kbd>2</kbd> Disco · <kbd>3</kbd> Honored One + Audio · <kbd>M</kbd> Mute)</li>
-            <li><kbd>S</kbd> or <kbd>↓</kbd> : Crouch / Slide while sprinting</li>
-            <li><kbd>E</kbd> or <kbd>K</kbd> : Dash · <kbd>F</kbd> : Flip</li>
-            <li><kbd>R</kbd> : Reset to origin O(0,0)</li>
+            <li><kbd>G</kbd> : Free Fall — <kbd>↓</kbd> Dive / <kbd>↑</kbd> Air Brake</li>
+            <li><b>f(x) Lab</b> : Toggle curves (<code>OFF</code> by default) · <kbd>S</kbd> carve · <kbd>S</kbd>+<kbd>Space</kbd> drop</li>
+            <li><b>Trials Mode</b> : Calculus challenges (<kbd>B</kbd> Lock critical/inflection point)</li>
+            <li><kbd>Z</kbd> : Dance (<kbd>1</kbd> Purple · <kbd>2</kbd> Disco · <kbd>3</kbd> Honored One · <kbd>M</kbd> Mute)</li>
+            <li><kbd>S</kbd> / <kbd>↓</kbd> : Crouch/Slide · <kbd>E</kbd>/<kbd>K</kbd> : Dash · <kbd>F</kbd> : Flip · <kbd>R</kbd> : Reset</li>
           </ul>
         </div>
         <div class="help-col">
@@ -130,7 +152,7 @@
         </div>
       </div>
       <div class="help-footer">
-        💡 Jump or walk onto any curve <b>y = f(x)</b> to surf tangent slopes! Hold <kbd>S</kbd> to carve faster, or press <kbd>S</kbd> + <kbd>Space</kbd> to drop through.
+        💡 Open <b>f(x)</b> in the top bar whenever you want to plot curves, view symbolic <b>f'(x)</b> &amp; <b>f''(x)</b>, shade <b>∫ f(x)dx</b>, and surf tangent slopes!
       </div>
     </aside>
 
@@ -150,16 +172,18 @@
       </div>
     </div>
 
-    <!-- Math Function Plotter & Slope Surfing Card -->
-    <section id="funcPanel" class="hud-card func-panel" aria-label="Function Plotter & Slope Surfing">
+    <!-- Math Function Lab & Slope Surfing Card (Hidden & OFF by default) -->
+    <section id="funcPanel" class="hud-card func-panel hidden" aria-label="Function Lab & Slope Surfing">
       <div class="func-header">
         <div class="func-title-wrap">
-          <strong>f(x) Slope Surfing</strong>
-          <span class="func-hint">Land on curves · <kbd>S</kbd> carve · <kbd>S</kbd>+<kbd>Space</kbd> drop</span>
+          <strong>f(x) Function Lab</strong>
+          <span class="func-hint">Carve <kbd>S</kbd> · Drop <kbd>S</kbd>+<kbd>Space</kbd></span>
         </div>
         <div class="func-header-actions">
-          <button id="btnDerivOverlay" class="tool-btn" aria-pressed="false" title="Overlay Live Derivative Curve y = f'(x)">f'(x)</button>
-          <button id="btnToggleFunc" class="tool-btn active" aria-pressed="true" title="Show/Hide Function Curve">ON</button>
+          <button id="btnDerivOverlay" class="tool-btn" aria-pressed="false" title="Overlay Derivative Curve y = f'(x)">f'(x)</button>
+          <button id="btnIntegralOverlay" class="tool-btn" aria-pressed="false" title="Shade Signed Integral Area ∫₀ˣ f(t)dt">∫ dx</button>
+          <button id="btnMarkersOverlay" class="tool-btn" aria-pressed="false" title="Highlight Roots & Local Extrema">Roots</button>
+          <button id="btnToggleFunc" class="tool-btn" aria-pressed="false" title="Enable/Disable Curve">OFF</button>
           <button id="btnCloseFunc" class="close-mini" aria-label="Hide Function Card">×</button>
         </div>
       </div>
@@ -178,8 +202,15 @@
       </form>
 
       <div id="funcPresets" class="func-presets" role="group" aria-label="Preset Functions"></div>
-      <div id="funcStatus" class="func-status" aria-live="polite">
-        Active: y = 1.6 * sin(0.7 * x) + 2.2
+
+      <div id="funcSymbolicBox" class="func-symbolic-box">
+        <div class="sym-row"><span class="sym-key">f'(x)</span><span id="symDeriv1" class="sym-val">—</span></div>
+        <div class="sym-row"><span class="sym-key">f''(x)</span><span id="symDeriv2" class="sym-val">—</span></div>
+        <div id="symIntegralRow" class="sym-row hidden"><span class="sym-key">∫₀ˣ</span><span id="symIntegralVal" class="sym-val">0.000</span></div>
+      </div>
+
+      <div id="funcStatus" class="func-status muted" aria-live="polite">
+        OFF · y = 1.6 * sin(0.7 * x) + 2.2
       </div>
     </section>
 
@@ -235,13 +266,16 @@
     </section>
   </div>
 
-  <script defer src="js/config.js?v=opt1"></script>
-  <script defer src="js/functions.js?v=opt1"></script>
-  <script defer src="js/challenges.js?v=opt1"></script>
-  <script defer src="js/input.js?v=opt1"></script>
-  <script defer src="js/particles.js?v=opt1"></script>
-  <script defer src="js/grid.js?v=opt1"></script>
-  <script defer src="js/stickman.js?v=opt1"></script>
-  <script defer src="js/game.js?v=opt1"></script>
+  <script defer src="js/config.js?v=2.0.0"></script>
+  <script defer src="js/math-cas.js?v=2.0.0"></script>
+  <script defer src="js/functions.js?v=2.0.0"></script>
+  <script defer src="js/challenges.js?v=2.0.0"></script>
+  <script defer src="js/input.js?v=2.0.0"></script>
+  <script defer src="js/particles.js?v=2.0.0"></script>
+  <script defer src="js/glfx.js?v=2.0.0"></script>
+  <script defer src="js/audio-fx.js?v=2.0.0"></script>
+  <script defer src="js/grid.js?v=2.0.0"></script>
+  <script defer src="js/stickman.js?v=2.0.0"></script>
+  <script defer src="js/game.js?v=2.0.0"></script>
 </body>
 </html>

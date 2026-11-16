@@ -157,6 +157,10 @@
   }
 
   function solveIK2(ax, ay, tx, ty, len1, len2, bendSign) {
+    const VR = MathStickGame.VerletRig;
+    if (VR && VR.RigSolver) {
+      return VR.RigSolver.solveTwoBone(ax, ay, tx, ty, len1, len2, bendSign, 0.012);
+    }
     const dx = tx - ax;
     const dy = ty - ay;
     const rawDist = Math.hypot(dx, dy);
@@ -341,6 +345,24 @@
     _makeEnemy(type, x, y, waveScale = 1) {
       const id = nextEnemyId++;
       const faceDir = x >= this.stickman.x ? -1 : 1;
+      const VR = MathStickGame.VerletRig || {};
+      const scale = type === 'boss' ? 1.62 : 0.98;
+      const ribbonChain = VR.VerletChain
+        ? new VR.VerletChain(
+            type === 'boss' ? 5 : 4,
+            type === 'boss' ? [0.16, 0.16, 0.15, 0.14] : [0.11, 0.105, 0.095],
+            {
+              friction: 0.87,
+              gravity: type === 'boss' ? -5.8 : -2.6,
+              angleStiffness: 0.24,
+              windFactor: 1.0,
+            }
+          )
+        : null;
+      if (ribbonChain) {
+        ribbonChain.reset(x - faceDir * 0.08 * scale, y + 0.5 * scale, -faceDir, 0.1);
+      }
+
       const base = {
         id,
         type,
@@ -358,6 +380,8 @@
         strikeTimer: 0,
         attackCooldown: 0.7 + Math.random() * 0.5,
         attackDidHit: false,
+        hitSquash: VR.SpringScalar ? new VR.SpringScalar(0, 185, 13) : null,
+        ribbonChain,
       };
 
       if (type === 'poly') {
@@ -616,6 +640,8 @@
       e.vx = pushDir * 5.2;
       e.vy = 2.6;
       e.hitFlash = 0.3;
+      if (e.hitSquash) e.hitSquash.impulse(-2.6);
+      if (e.ribbonChain) e.ribbonChain.addImpulse(pushDir * 6.5, 4.2, 1.1);
 
       this.score += 75;
       this.combo += 1;
@@ -826,6 +852,8 @@
           e.vy = Math.max(e.vy, 4.8);
           e.vx = pushDir * 3.5;
           e.stunTimer = Math.max(e.stunTimer, 0.7);
+          if (e.hitSquash) e.hitSquash.impulse(-2.8);
+          if (e.ribbonChain) e.ribbonChain.addImpulse(pushDir * 5.2, 4.8, 1.1);
           this._applyWeaponHit(j, w.id, pushDir, 0.45, true);
         }
       }
@@ -859,6 +887,8 @@
       e.strikeTimer = 0;
       e.hitFlash = 0.24;
       e.vx = (dirX || 1) * 2.8;
+      if (e.hitSquash) e.hitSquash.impulse(-2.1);
+      if (e.ribbonChain) e.ribbonChain.addImpulse((dirX || 1) * 4.8, 2.8, 1.0);
       this.hitstopTimer = Math.max(this.hitstopTimer, 0.04);
       this.triggerShake(4.8, 0.12);
       if (this.particles) {
@@ -884,6 +914,7 @@
       this.wrongHits++;
       this.combo = 0;
       e.hitFlash = 0.18;
+      if (e.hitSquash) e.hitSquash.impulse(1.1);
       this._spawnPopup(e.x, e.y + e.r + 0.55, msg, '#ff4d6d', 1.6);
       this.lastLog = msg;
       if (this.audioFx) this.audioFx.playMathHitWrong();
@@ -1270,6 +1301,33 @@
         e.stunTimer = Math.max(0, e.stunTimer - dt);
         e.hitFlash = Math.max(0, e.hitFlash - dt);
         e.attackCooldown = Math.max(0, e.attackCooldown - dt);
+        if (e.hitSquash) e.hitSquash.update(dt);
+        if (e.ribbonChain) {
+          const scale = e.type === 'boss' ? 1.62 : 0.98;
+          const f = e.facing || -1;
+          const anchorX = e.x - f * (e.type === 'boss' ? 0.12 : 0.1) * scale;
+          const anchorY = e.y + (e.type === 'boss' ? 0.35 : 0.56) * scale;
+          const groundY = e.type === 'harmonic' || e.type === 'deficit' ? null : 0.03;
+          e.ribbonChain.update(
+            dt,
+            anchorX,
+            anchorY,
+            -e.vx * 0.72 - f * 1.1,
+            -e.vy * 0.4 + 0.55,
+            {
+              iterations: 3,
+              time: e.animTime,
+              flutterFreq: 7.4,
+              flutterAmp: e.aiState === 'strike' || e.dashActive > 0 ? 1.6 : 0.65,
+              floorY: groundY,
+              restDirX: -f * 0.9,
+              restDirY: e.type === 'boss' ? -0.65 : 0.05,
+              restPull: 2.2,
+              resetDirX: -f,
+              resetDirY: 0,
+            }
+          );
+        }
 
         // Apply knockback & gravity recovery
         if (e.stunTimer > 0) {
@@ -1464,18 +1522,84 @@
       ctx.restore();
     }
 
+    _drawEnemyTapered(ctx, x1, y1, x2, y2, r1, r2, rMid = null) {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.hypot(dx, dy);
+      const sr1 = Math.max(0.5, r1);
+      const sr2 = Math.max(0.5, r2);
+      if (len < 0.5) {
+        ctx.beginPath();
+        ctx.arc(x1, y1, sr1, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+      }
+      const nx = -dy / len;
+      const ny = dx / len;
+      const ang = Math.atan2(dy, dx);
+      const sMid = rMid !== null ? Math.max(0.5, rMid) : (sr1 + sr2) * 0.5;
+      const mx = (x1 + x2) * 0.5;
+      const my = (y1 + y2) * 0.5;
+      ctx.beginPath();
+      ctx.arc(x1, y1, sr1, ang + Math.PI * 0.5, ang - Math.PI * 0.5, false);
+      if (rMid !== null) {
+        ctx.quadraticCurveTo(mx + nx * sMid, my + ny * sMid, x2 + nx * sr2, y2 + ny * sr2);
+      } else {
+        ctx.lineTo(x2 + nx * sr2, y2 + ny * sr2);
+      }
+      ctx.arc(x2, y2, sr2, ang - Math.PI * 0.5, ang + Math.PI * 0.5, false);
+      if (rMid !== null) {
+        ctx.quadraticCurveTo(mx - nx * sMid, my - ny * sMid, x1 - nx * sr1, y1 - ny * sr1);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    _drawEnemyLimb(ctx, wx1, wy1, jx, jy, ex, ey, width, color, hw, hh, cx, cy, ppu, isLeg, facing, scale) {
+      const x1 = hw + (wx1 - cx) * ppu;
+      const y1 = hh - (wy1 - cy) * ppu;
+      const x2 = hw + (jx - cx) * ppu;
+      const y2 = hh - (jy - cy) * ppu;
+      const x3 = hw + (ex - cx) * ppu;
+      const y3 = hh - (ey - cy) * ppu;
+
+      const rRoot = width * (isLeg ? 0.62 : 0.52);
+      const rUpperMid = width * (isLeg ? 0.58 : 0.49);
+      const rMid = width * (isLeg ? 0.44 : 0.38);
+      const rLowerMid = width * (isLeg ? 0.52 : 0.44);
+      const rTip = width * (isLeg ? 0.31 : 0.28);
+
+      ctx.fillStyle = color;
+      this._drawEnemyTapered(ctx, x1, y1, x2, y2, rRoot, rMid, rUpperMid);
+      this._drawEnemyTapered(ctx, x2, y2, x3, y3, rMid, rTip, rLowerMid);
+      ctx.beginPath();
+      ctx.arc(x2, y2, Math.max(0.8, rMid * 1.04), 0, Math.PI * 2);
+      ctx.fill();
+
+      if (isLeg) {
+        const footLen = Math.max(4, ppu * 0.14 * scale);
+        const toeX = x3 + facing * footLen;
+        const toeY = y3;
+        this._drawEnemyTapered(ctx, x3, y3, toeX, toeY, rTip * 1.05, rTip * 0.52);
+      } else {
+        const hdx = x3 - x2;
+        const hdy = y3 - y2;
+        const hlen = Math.hypot(hdx, hdy) || 1;
+        const fistL = Math.max(3, ppu * 0.052 * scale);
+        const fx = x3 + (hdx / hlen) * fistL;
+        const fy = y3 + (hdy / hlen) * fistL;
+        this._drawEnemyTapered(ctx, x3, y3, fx, fy, rTip * 1.15, rTip * 0.65);
+      }
+    }
+
     _drawSegWorld(ctx, x1, y1, x2, y2, widthPx, color, hw, hh, cx, cy, ppu) {
       const sx1 = hw + (x1 - cx) * ppu;
       const sy1 = hh - (y1 - cy) * ppu;
       const sx2 = hw + (x2 - cx) * ppu;
       const sy2 = hh - (y2 - cy) * ppu;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = widthPx;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(sx1, sy1);
-      ctx.lineTo(sx2, sy2);
-      ctx.stroke();
+      ctx.fillStyle = color;
+      const r = Math.max(0.8, widthPx * 0.5);
+      this._drawEnemyTapered(ctx, sx1, sy1, sx2, sy2, r, r);
     }
 
     _renderEnemyStickman(ctx, e, camera, gridRenderer, theme, mainCol, strokeCol) {
@@ -1492,28 +1616,31 @@
       const windingUp = e.aiState === 'windup';
       const striking = e.aiState === 'strike';
 
-      // Procedural IK Rival Stickman Warrior Coordinates around e.x, e.y
+      // Procedural IK + Curved 2-Segment Spine + Squash & Stretch
       const walkBob =
         e.type === 'harmonic' || e.type === 'deficit'
           ? Math.sin(e.animTime * 4) * 0.04
           : Math.abs(Math.sin(e.animTime * 6)) * (Math.abs(e.vx) > 0.2 ? 0.04 : 0.01);
-      const hipX = e.x;
-      const hipY = e.y - 0.14 * scale + walkBob;
+      const rawHipX = e.x;
+      const rawHipY = e.y - 0.14 * scale + walkBob;
       const crouchTilt = stunned
         ? -0.32
         : windingUp
-          ? -0.24
+          ? -0.26
           : striking
             ? 0.48
             : Math.abs(e.vx) > 0.3
               ? 0.22
               : 0.06;
+      const spineArch = stunned ? -0.14 : windingUp ? -0.14 : striking ? 0.16 : 0.05;
       const torsoLen = 0.5 * scale;
-      const shX = hipX + f * Math.sin(crouchTilt) * torsoLen;
-      const shY = hipY + Math.cos(crouchTilt) * torsoLen;
+      const rawWaistX = rawHipX + f * Math.sin(crouchTilt + spineArch) * (torsoLen * 0.48);
+      const rawWaistY = rawHipY + Math.cos(crouchTilt + spineArch) * (torsoLen * 0.48);
+      const rawShX = rawHipX + f * Math.sin(crouchTilt) * torsoLen;
+      const rawShY = rawHipY + Math.cos(crouchTilt) * torsoLen;
       const headR = 0.155 * scale;
-      const headX = shX + f * Math.sin(crouchTilt * 0.7) * (headR + 0.06 * scale);
-      const headY = shY + Math.cos(crouchTilt * 0.7) * (headR + 0.06 * scale);
+      const rawHeadX = rawShX + f * Math.sin(crouchTilt * 0.7) * (headR + 0.06 * scale);
+      const rawHeadY = rawShY + Math.cos(crouchTilt * 0.7) * (headR + 0.06 * scale);
 
       const thigh = 0.4 * scale;
       const shin = 0.4 * scale;
@@ -1523,34 +1650,68 @@
           : Math.sin(e.animTime * (Math.abs(e.vx) > 0.2 ? 9.5 : 3)) *
             (Math.abs(e.vx) > 0.2 ? 0.26 * scale : 0.04 * scale);
 
-      const footY = e.type === 'harmonic' || e.type === 'deficit' ? hipY - 0.72 * scale : 0;
-      const leg1 = solveIK2(hipX, hipY, hipX + f * (0.12 * scale + stride), footY, thigh, shin, f);
-      const leg2 = solveIK2(hipX, hipY, hipX - f * (0.14 * scale + stride * 0.8), footY, thigh, shin, f);
+      const footY = e.type === 'harmonic' || e.type === 'deficit' ? rawHipY - 0.72 * scale : 0;
+      const leg1Raw = solveIK2(rawHipX, rawHipY, rawHipX + f * (0.12 * scale + stride), footY, thigh, shin, f);
+      const leg2Raw = solveIK2(rawHipX, rawHipY, rawHipX - f * (0.14 * scale + stride * 0.8), footY, thigh, shin, f);
 
       const armU = 0.26 * scale;
       const armF = 0.25 * scale;
       let arm1Target;
       let arm2Target;
       if (stunned) {
-        arm1Target = { x: shX - f * 0.22 * scale, y: shY + 0.15 * scale };
-        arm2Target = { x: shX + f * 0.24 * scale, y: shY - 0.18 * scale };
+        arm1Target = { x: rawShX - f * 0.22 * scale, y: rawShY + 0.15 * scale };
+        arm2Target = { x: rawShX + f * 0.24 * scale, y: rawShY - 0.18 * scale };
       } else if (windingUp) {
-        arm1Target = { x: shX - f * 0.34 * scale, y: shY + 0.34 * scale };
-        arm2Target = { x: shX + f * 0.24 * scale, y: shY + 0.1 * scale };
+        arm1Target = { x: rawShX - f * 0.34 * scale, y: rawShY + 0.34 * scale };
+        arm2Target = { x: rawShX + f * 0.24 * scale, y: rawShY + 0.1 * scale };
       } else if (striking) {
-        arm1Target = { x: shX + f * 0.48 * scale, y: shY - 0.08 * scale };
-        arm2Target = { x: shX - f * 0.2 * scale, y: shY - 0.16 * scale };
+        arm1Target = { x: rawShX + f * 0.48 * scale, y: rawShY - 0.08 * scale };
+        arm2Target = { x: rawShX - f * 0.2 * scale, y: rawShY - 0.16 * scale };
       } else {
         const readySway = Math.sin(e.animTime * 4.2) * 0.05 * scale;
-        arm1Target = { x: shX + f * 0.32 * scale, y: shY - 0.06 * scale + readySway };
-        arm2Target = { x: shX - f * 0.16 * scale, y: shY - 0.22 * scale - readySway };
+        arm1Target = { x: rawShX + f * 0.32 * scale, y: rawShY - 0.06 * scale + readySway };
+        arm2Target = { x: rawShX - f * 0.16 * scale, y: rawShY - 0.22 * scale - readySway };
       }
 
-      const arm1 = solveIK2(shX, shY, arm1Target.x, arm1Target.y, armU, armF, -f);
-      const arm2 = solveIK2(shX, shY, arm2Target.x, arm2Target.y, armU, armF, -f);
+      const arm1Raw = solveIK2(rawShX, rawShY, arm1Target.x, arm1Target.y, armU, armF, -f);
+      const arm2Raw = solveIK2(rawShX, rawShY, arm2Target.x, arm2Target.y, armU, armF, -f);
 
-      const limbW = Math.max(2.0, ppu * 0.062 * scale);
-      const torsoW = Math.max(2.6, ppu * 0.084 * scale);
+      // Apply volume-preserving hitSquash transform around ground/base anchor
+      const sqVal = e.hitSquash ? utils.clamp(e.hitSquash.value, -0.25, 0.25) : 0;
+      const sy = 1 + sqVal;
+      const sx = 1 / Math.sqrt(sy);
+      const sqBaseY = e.type === 'harmonic' || e.type === 'deficit' ? e.y - 0.85 * scale : 0;
+      const sqX = (wx) => e.x + (wx - e.x) * sx;
+      const sqY = (wy) => sqBaseY + (wy - sqBaseY) * sy;
+
+      const hipX = sqX(rawHipX);
+      const hipY = sqY(rawHipY);
+      const waistX = sqX(rawWaistX);
+      const waistY = sqY(rawWaistY);
+      const shX = sqX(rawShX);
+      const shY = sqY(rawShY);
+      const headX = sqX(rawHeadX);
+      const headY = sqY(rawHeadY);
+
+      const leg1 = {
+        jx: sqX(leg1Raw.jx), jy: sqY(leg1Raw.jy),
+        ex: sqX(leg1Raw.ex), ey: sqY(leg1Raw.ey),
+      };
+      const leg2 = {
+        jx: sqX(leg2Raw.jx), jy: sqY(leg2Raw.jy),
+        ex: sqX(leg2Raw.ex), ey: sqY(leg2Raw.ey),
+      };
+      const arm1 = {
+        jx: sqX(arm1Raw.jx), jy: sqY(arm1Raw.jy),
+        ex: sqX(arm1Raw.ex), ey: sqY(arm1Raw.ey),
+      };
+      const arm2 = {
+        jx: sqX(arm2Raw.jx), jy: sqY(arm2Raw.jy),
+        ex: sqX(arm2Raw.ex), ey: sqY(arm2Raw.ey),
+      };
+
+      const limbW = Math.max(2.0, ppu * 0.064 * scale);
+      const torsoW = Math.max(2.6, ppu * 0.088 * scale);
       const bodyCol = e.hitFlash > 0 ? '#ffffff' : isBlack ? '#f1f5f9' : '#0f172a';
       const backLimbCol = e.hitFlash > 0 ? '#ffffff' : mainCol;
 
@@ -1559,62 +1720,165 @@
         const sFoot = gridRenderer.worldToScreen(e.x, 0, camera);
         ctx.fillStyle = theme.shadow;
         ctx.beginPath();
-        ctx.ellipse(sFoot.x, sFoot.y, Math.max(7, ppu * 0.32 * scale), Math.max(2, ppu * 0.06 * scale), 0, 0, Math.PI * 2);
+        ctx.ellipse(sFoot.x, sFoot.y, Math.max(7, ppu * 0.32 * scale * sx), Math.max(2, ppu * 0.06 * scale), 0, 0, Math.PI * 2);
         ctx.fill();
       }
 
       // Aura glow ring behind Boss or Charging Lancer
       if (e.type === 'boss' || e.dashActive > 0) {
         const spTorso = gridRenderer.worldToScreen(shX, shY, camera);
+        ctx.save();
         ctx.strokeStyle = mainCol;
         ctx.globalAlpha = 0.28;
         ctx.lineWidth = Math.max(3, 4 * scale);
         ctx.beginPath();
-        ctx.arc(spTorso.x, spTorso.y, ppu * 0.58 * scale, 0, Math.PI * 2);
+        ctx.arc(spTorso.x, spTorso.y, Math.max(4, ppu * 0.58 * scale), 0, Math.PI * 2);
         ctx.stroke();
-        ctx.globalAlpha = 1;
+        ctx.restore();
       }
 
-      // Back arm & back leg
-      this._drawSegWorld(ctx, shX, shY, arm2.jx, arm2.jy, limbW * 0.9, backLimbCol, hw, hh, cx, cy, ppu);
-      this._drawSegWorld(ctx, arm2.jx, arm2.jy, arm2.ex, arm2.ey, limbW * 0.82, backLimbCol, hw, hh, cx, cy, ppu);
-      this._drawSegWorld(ctx, hipX, hipY, leg2.jx, leg2.jy, limbW * 0.95, backLimbCol, hw, hh, cx, cy, ppu);
-      this._drawSegWorld(ctx, leg2.jx, leg2.jy, leg2.ex, leg2.ey, limbW * 0.88, backLimbCol, hw, hh, cx, cy, ppu);
+      // Flowing Verlet Boss Cape / Fighter Headband Ribbon behind body
+      if (e.ribbonChain && e.ribbonChain.nodes && e.ribbonChain.nodes.length >= 3) {
+        const rNodes = e.ribbonChain.nodes;
+        if (Math.hypot(rNodes[0].x - e.x, rNodes[0].y - e.y) <= 2.4 * scale) {
+          ctx.save();
+          if (e.type === 'boss') {
+            // Wide dark Sovereign cape with glowing trim
+            const ptsX = rNodes.map((n) => hw + (n.x - cx) * ppu);
+            const ptsY = rNodes.map((n) => hh - (n.y - cy) * ppu);
+            const nLen = ptsX.length;
+            const leftX = [];
+            const leftY = [];
+            const rightX = [];
+            const rightY = [];
+            for (let k = 0; k < nLen; k++) {
+              const pPrev = Math.max(0, k - 1);
+              const pNext = Math.min(nLen - 1, k + 1);
+              let dx = ptsX[pNext] - ptsX[pPrev];
+              let dy = ptsY[pNext] - ptsY[pPrev];
+              const d = Math.hypot(dx, dy) || 1;
+              dx /= d;
+              dy /= d;
+              const nx = -dy;
+              const ny = dx;
+              const w = ppu * (0.09 + (k / (nLen - 1)) * 0.16);
+              leftX.push(ptsX[k] + nx * w);
+              leftY.push(ptsY[k] + ny * w);
+              rightX.push(ptsX[k] - nx * w);
+              rightY.push(ptsY[k] - ny * w);
+            }
+            ctx.fillStyle = isBlack ? '#0b101d' : '#1e293b';
+            ctx.strokeStyle = strokeCol;
+            ctx.lineWidth = Math.max(1.5, ppu * 0.025);
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            ctx.moveTo(leftX[0], leftY[0]);
+            for (let k = 1; k < nLen; k++) ctx.lineTo(leftX[k], leftY[k]);
+            for (let k = nLen - 1; k >= 0; k--) ctx.lineTo(rightX[k], rightY[k]);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+          } else {
+            // Sleek undulating fighter headband streamer
+            ctx.fillStyle = strokeCol;
+            ctx.globalAlpha = 0.88;
+            for (let k = 0; k < rNodes.length - 1; k++) {
+              const xA = hw + (rNodes[k].x - cx) * ppu;
+              const yA = hh - (rNodes[k].y - cy) * ppu;
+              const xB = hw + (rNodes[k + 1].x - cx) * ppu;
+              const yB = hh - (rNodes[k + 1].y - cy) * ppu;
+              const rA = Math.max(1.0, ppu * 0.028 * scale * (1 - k / rNodes.length));
+              const rB = Math.max(0.6, ppu * 0.028 * scale * (1 - (k + 1) / rNodes.length));
+              this._drawEnemyTapered(ctx, xA, yA, xB, yB, rA, rB);
+            }
+          }
+          ctx.restore();
+        }
+      }
 
-      // Torso + colored armor rim
-      this._drawSegWorld(ctx, hipX, hipY, shX, shY, torsoW, bodyCol, hw, hh, cx, cy, ppu);
-      this._drawSegWorld(ctx, hipX, hipY, shX, shY, torsoW * 0.42, strokeCol, hw, hh, cx, cy, ppu);
+      // Back arm & back leg (muscular tapered anatomy)
+      this._drawEnemyLimb(ctx, shX, shY, arm2.jx, arm2.jy, arm2.ex, arm2.ey, limbW * 0.9, backLimbCol, hw, hh, cx, cy, ppu, false, f, scale);
+      this._drawEnemyLimb(ctx, hipX, hipY, leg2.jx, leg2.jy, leg2.ex, leg2.ey, limbW * 0.96, backLimbCol, hw, hh, cx, cy, ppu, true, f, scale);
+
+      // Curved 2-Segment Warrior Torso & Type Armor Silhouette
+      const sHipX = hw + (hipX - cx) * ppu;
+      const sHipY = hh - (hipY - cy) * ppu;
+      const sWaistX = hw + (waistX - cx) * ppu;
+      const sWaistY = hh - (waistY - cy) * ppu;
+      const sShX = hw + (shX - cx) * ppu;
+      const sShY = hh - (shY - cy) * ppu;
+
+      ctx.fillStyle = bodyCol;
+      this._drawEnemyTapered(ctx, sHipX, sHipY, sWaistX, sWaistY, torsoW * 0.48, torsoW * 0.44);
+      this._drawEnemyTapered(ctx, sWaistX, sWaistY, sShX, sShY, torsoW * 0.44, torsoW * (e.type === 'boss' ? 0.72 : 0.62), torsoW * 0.56);
+
+      // Type-specific torso armor accents (Sovereign coat collar / Samurai vest / Vector chest fin)
+      ctx.save();
+      ctx.strokeStyle = strokeCol;
+      ctx.lineWidth = Math.max(1.5, ppu * 0.026 * scale);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(sHipX, sHipY);
+      ctx.quadraticCurveTo(sWaistX, sWaistY, sShX, sShY);
+      ctx.stroke();
+
+      if (e.type === 'boss' || e.type === 'kink') {
+        const spDx = sShX - sHipX;
+        const spDy = sShY - sHipY;
+        const spL = Math.hypot(spDx, spDy) || 1;
+        const px = -spDy / spL;
+        const py = spDx / spL;
+        const pauldronW = ppu * (e.type === 'boss' ? 0.12 : 0.085) * scale;
+        ctx.fillStyle = strokeCol;
+        ctx.beginPath();
+        ctx.moveTo(sShX - px * pauldronW, sShY - py * pauldronW);
+        ctx.lineTo(sShX + px * pauldronW, sShY + py * pauldronW);
+        ctx.lineTo(sShX + f * ppu * 0.03 * scale, sShY + ppu * 0.04 * scale);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
 
       // Front leg & arm
-      this._drawSegWorld(ctx, hipX, hipY, leg1.jx, leg1.jy, limbW, bodyCol, hw, hh, cx, cy, ppu);
-      this._drawSegWorld(ctx, leg1.jx, leg1.jy, leg1.ex, leg1.ey, limbW * 0.92, bodyCol, hw, hh, cx, cy, ppu);
-      this._drawSegWorld(ctx, shX, shY, arm1.jx, arm1.jy, limbW, bodyCol, hw, hh, cx, cy, ppu);
-      this._drawSegWorld(ctx, arm1.jx, arm1.jy, arm1.ex, arm1.ey, limbW * 0.92, bodyCol, hw, hh, cx, cy, ppu);
+      this._drawEnemyLimb(ctx, hipX, hipY, leg1.jx, leg1.jy, leg1.ex, leg1.ey, limbW, bodyCol, hw, hh, cx, cy, ppu, true, f, scale);
+      this._drawEnemyLimb(ctx, shX, shY, arm1.jx, arm1.jy, arm1.ex, arm1.ey, limbW, bodyCol, hw, hh, cx, cy, ppu, false, f, scale);
 
       // Sculpted warrior head + fierce glowing visor eye + signature silhouette gear!
       const spH = { x: hw + (headX - cx) * ppu, y: hh - (headY - cy) * ppu };
       const headPx = Math.max(4.5, headR * ppu);
+      const headTiltAng = Math.atan2(spH.y - sShY, spH.x - sShX) + Math.PI * 0.5;
+      const headRx = Math.max(2.5, headPx * sx);
+      const headRy = Math.max(2.5, headPx * sy);
+
       ctx.fillStyle = bodyCol;
       ctx.beginPath();
-      ctx.arc(spH.x, spH.y, headPx, 0, Math.PI * 2);
+      ctx.ellipse(spH.x, spH.y, headRx, headRy, headTiltAng, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = strokeCol;
       ctx.lineWidth = Math.max(1.5, headPx * 0.14);
       ctx.stroke();
 
-      // Glowing warrior headband / eye slit
+      // Glowing warrior eye slit + determined combat brow
       const eyeX = spH.x + f * headPx * 0.42;
       const eyeY = spH.y - headPx * 0.08;
       ctx.fillStyle = windingUp ? '#fde047' : mainCol;
       ctx.beginPath();
       ctx.ellipse(eyeX, eyeY, Math.max(2, headPx * 0.22), Math.max(1.2, headPx * 0.11), f * 0.25, 0, Math.PI * 2);
       ctx.fill();
+      if (headPx >= 8) {
+        ctx.strokeStyle = windingUp ? '#fde047' : strokeCol;
+        ctx.lineWidth = Math.max(1.1, headPx * 0.08);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(eyeX - f * headPx * 0.18, eyeY - headPx * 0.19);
+        ctx.lineTo(eyeX + f * headPx * 0.24, eyeY - headPx * 0.08);
+        ctx.stroke();
+      }
 
-      // Headband / Crown spikes per math warrior type
+      // Signature Crown / Horns / Kinetic Helm Crest
       ctx.strokeStyle = strokeCol;
       ctx.lineWidth = Math.max(1.8, ppu * 0.032 * scale);
       if (e.type === 'boss') {
-        // Composite Sovereign 3-spike crown
         for (let k = -1; k <= 1; k++) {
           ctx.beginPath();
           ctx.moveTo(spH.x + k * headPx * 0.55, spH.y - headPx * 0.85);
@@ -1622,21 +1886,16 @@
           ctx.stroke();
         }
       } else if (e.type === 'kink') {
-        // Sharp |x| Samurai horns
         ctx.beginPath();
         ctx.moveTo(spH.x - f * headPx * 0.1, spH.y - headPx * 0.85);
         ctx.lineTo(spH.x - f * headPx * 0.55, spH.y - headPx * 1.48);
         ctx.moveTo(spH.x + f * headPx * 0.25, spH.y - headPx * 0.85);
         ctx.lineTo(spH.x + f * headPx * 0.65, spH.y - headPx * 1.48);
         ctx.stroke();
-      } else {
-        // Flowing fighter headband tails
-        const wv = Math.sin(e.animTime * 8) * headPx * 0.25;
+      } else if (e.type === 'vector_charger') {
         ctx.beginPath();
-        ctx.moveTo(spH.x - f * headPx * 0.7, spH.y - headPx * 0.2);
-        ctx.lineTo(spH.x - f * headPx * 1.55, spH.y - headPx * 0.4 + wv);
-        ctx.moveTo(spH.x - f * headPx * 0.7, spH.y - headPx * 0.1);
-        ctx.lineTo(spH.x - f * headPx * 1.35, spH.y + headPx * 0.15 - wv);
+        ctx.moveTo(spH.x - f * headPx * 0.2, spH.y - headPx * 0.88);
+        ctx.lineTo(spH.x - f * headPx * 1.15, spH.y - headPx * 1.32);
         ctx.stroke();
       }
 
@@ -1684,6 +1943,28 @@
         }
         ctx.stroke();
         ctx.restore();
+
+        // Crisp Enemy Strike Crescent Smear when lunging/slashing!
+        if (striking) {
+          ctx.save();
+          if (isBlack) ctx.globalCompositeOperation = 'lighter';
+          ctx.strokeStyle = mainCol;
+          ctx.globalAlpha = 0.55;
+          ctx.lineWidth = Math.max(4, ppu * 0.09 * scale);
+          ctx.lineCap = 'round';
+          const arcC = gridRenderer.worldToScreen(shX, shY, camera);
+          const arcR = Math.max(14, ppu * 0.72 * scale);
+          ctx.beginPath();
+          if (f > 0) ctx.arc(arcC.x, arcC.y, arcR, -0.85, 0.55);
+          else ctx.arc(arcC.x, arcC.y, arcR, Math.PI - 0.55, Math.PI + 0.85);
+          ctx.stroke();
+
+          ctx.strokeStyle = '#ffffff';
+          ctx.globalAlpha = 0.78;
+          ctx.lineWidth = Math.max(1.4, ppu * 0.025 * scale);
+          ctx.stroke();
+          ctx.restore();
+        }
       }
 
       // Dead Cells "! PARRY NOW" exclamation telegraph overhead when enemy winds up strike!

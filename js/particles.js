@@ -127,12 +127,13 @@
       });
     }
 
-    addGhost(poseSnapshot) {
-      if (this.ghosts.length >= 12) return;
+    addGhost(poseSnapshot, colorOverride = null, life = 0.2) {
+      if (this.ghosts.length >= 16) return;
       this.ghosts.push({
         pose: poseSnapshot,
-        life: 0.18,
-        maxLife: 0.18,
+        color: colorOverride,
+        life,
+        maxLife: life,
       });
     }
 

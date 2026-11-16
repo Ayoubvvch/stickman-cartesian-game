@@ -1,8 +1,19 @@
-# Stickman · Orthonormal Cartesian Frame v4.0
+# Stickman · Orthonormal Cartesian Frame v4.1
 
 An interactive **Orthonormal Cartesian Coordinate System `(O; i, j)`**, **Vector Mechanics Engine**, & **Anime Stickman Action-Calculus Game** where a stylized procedural-IK warrior sprints, climbs the `y`-axis, surfs arbitrary `y = f(x)` curves across all four quadrants, **physically throws & rides steerable vectors (`u⃗`)**, composes velocities via **Chasles' relation ($\vec{u} + \vec{w} = \vec{R}$)**, and battles articulated Stickman constructs using mathematical swords & parries.
 
-## What's New in v4.0
+## What's New in v4.1 — Procedural Animation & Rig Overhaul
+
+- **Verlet Cloth, Hair & Armor Physics ([`js/verlet-rig.js`](js/verlet-rig.js))**:
+  - Distance-and-angle-constrained `VerletChain` dynamics drive flowing ninja scarves, spiky hair locks (`Gojo` / `Toji` / `Benimaru`), twin coat & haori tails, the Sovereign Boss cape, and fighter headband streamers with teleport protection and ground collision.
+- **Volume-Preserving Squash & Stretch + Curved Spine Rig**:
+  - Damped harmonic `SpringScalar` elasticity deforms jump takeoffs, dashes, heavy landings, weapon hits, and parries cleanly.
+  - 2-segment spine articulation (`hip → waist → shoulder`) with 2.5D shoulder/hip counter-rotation and closed-chain two-handed IK weapon coupling (`RigSolver.solveTwoHandWeapon`) on heavy broadswords and spears.
+- **Sculpted Alan Becker × Dead Cells × Anime Silhouettes & Weapon Smears**:
+  - Muscular tapered quadratic limbs, sculpted shoes/fists, *Toji*'s purple Inventory Curse worm, *Benimaru*'s obi sash & crimson-gold eyes, *Gojo*'s high-collar coat flaps, and *Animator+*'s curved silhouette with energy wrist cuffs.
+  - Additive weapon slash smear ribbons + white tip splines across katana, broadsword, twin blades, and spear throws, paired with style-tinted afterimages and crescent attack smears on all 6 Stickman enemy archetypes.
+
+## Highlights from v4.0
 
 - **Physical Vector Throwing + Smooth 360° Mid-Ride Steering & Overdrive**:
   - Aim & launch (`U` or mouse aim) plays a windup IK arm coil and whips a glowing vector spear forward from Stickman's hand (`throwState`), allowing sprinting/leaping right onto the shaft to ride it.
@@ -10,11 +21,7 @@ An interactive **Orthonormal Cartesian Coordinate System `(O; i, j)`**, **Vector
 - **Alan Becker × Dead Cells IK Stickman Combat (`ساحة المعركة الرياضية` / `Arena`)**:
   - Battle **articulated procedural-IK Stickman enemies** wielding math-reactive weaponry and glowing `!` telegraph windups across all 6 archetypes (`poly`, `deficit`, `harmonic`, `vector_charger`, `kink`, and 4-phase `Boss`).
   - Wield **4 selectable Swords & Weapons** (`[1] d/dx` Katana, `[2] ∫ dx` Heavy Broadsword, `[3] -f(x)` Twin Blades, `[4] -v⃗ / ⊥` Force Spear) with **3-hit melee combos**, crescent slash arcs + sword-wave projectiles, timed **Parry** (`K` or Right-Click, `+4 HP` & `PARRY CRIT`), **Air Ground-Slam** (`S + Attack`), **Hitstop** freeze frames, and DPR-aware **Screen Shake**.
-- **Selectable Anime Warrior Styles (`N` / Toolbar Switcher)** + Dynamic GPU Shader Sync:
-  - **`Infinity` (Gojo)**: Wind-reactive spiky silver-white hair, dark obsidian coat, Six Eyes cyan glow.
-  - **`Zero Curse` (Toji)**: Swept black hair with bangs, fitted top + hakama trousers, purple sash, emerald aura.
-  - **`Crimson Pyre` (Benimaru)**: Black-crimson spiky hair, flame-motif haori, mismatched `○ / ×` eyes.
-  - **`Animator+` (Alan)**: Sharp classic Stickman silhouette enhanced with amber energy aura.
+- **Selectable Anime Warrior Styles (`N` / Toolbar Switcher)** + Dynamic GPU Shader Sync (`Infinity` Gojo, `Zero Curse` Toji, `Crimson Pyre` Benimaru, `Animator+` Alan).
 
 ## Included from v3.0 & Core
 

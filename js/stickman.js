@@ -12,9 +12,13 @@
       this.combat = null;
       this.characterStyle = 'gojo';
       this._glowSprites = new Map();
-      this._scarfPtsX = new Float64Array(8);
-      this._scarfPtsY = new Float64Array(8);
+      this._scarfPtsX = new Float64Array(12);
+      this._scarfPtsY = new Float64Array(12);
       this._honoredQuoteW = 0;
+      this._weaponTrail = [];
+      this._trailSampleTimer = 0;
+      const VR = MathStickGame.VerletRig || {};
+      this.squashSpring = VR.SpringScalar ? new VR.SpringScalar(0, 185, 13) : null;
       this.reset();
     }
 
@@ -51,6 +55,7 @@
       if (styles[id]) {
         this.characterStyle = id;
         this.glFlashTimer = Math.max(this.glFlashTimer || 0, 0.24);
+        if (this.squashSpring) this.squashSpring.impulse(2.4);
       }
       return this.characterStyle;
     }
@@ -64,14 +69,91 @@
       return this.setCharacterStyle(nextKey);
     }
 
+    _impulseSquash(dv) {
+      if (this.squashSpring && Number.isFinite(dv)) {
+        this.squashSpring.impulse(dv * 1.45);
+      }
+    }
+
+    _impulseCloth(dvx, dvy) {
+      if (this.scarfVerlet) this.scarfVerlet.addImpulse(dvx, dvy, 1.15);
+      if (this.coatLeftVerlet) this.coatLeftVerlet.addImpulse(dvx * 0.9, dvy * 0.85, 1.0);
+      if (this.coatRightVerlet) this.coatRightVerlet.addImpulse(dvx * 0.9, dvy * 0.85, 1.0);
+      if (this.hairVerlet) {
+        this.hairVerlet.back.addImpulse(dvx * 0.75, dvy * 0.7, 0.9);
+        this.hairVerlet.top.addImpulse(dvx * 0.75, dvy * 0.7, 0.9);
+        this.hairVerlet.bang.addImpulse(dvx * 0.75, dvy * 0.7, 0.9);
+      }
+    }
+
     _resetScarf(nx, ny) {
-      this.scarfChain = [
-        { x: nx, y: ny },
-        { x: nx - this.facing * 0.12, y: ny - 0.04 },
-        { x: nx - this.facing * 0.24, y: ny - 0.1 },
-        { x: nx - this.facing * 0.35, y: ny - 0.17 },
-        { x: nx - this.facing * 0.45, y: ny - 0.24 },
-      ];
+      const VR = MathStickGame.VerletRig || {};
+      const f = this.facing || 1;
+      if (VR.VerletChain) {
+        if (!this.scarfVerlet) {
+          this.scarfVerlet = new VR.VerletChain(
+            8,
+            [0.105, 0.105, 0.1, 0.095, 0.09, 0.085, 0.08],
+            { friction: 0.89, gravity: -4.2, angleStiffness: 0.18, windFactor: 1.05 }
+          );
+        }
+        this.scarfVerlet.reset(nx, ny, -f, -0.25);
+        this.scarfChain = this.scarfVerlet.nodes;
+
+        if (!this.coatLeftVerlet) {
+          this.coatLeftVerlet = new VR.VerletChain(
+            4,
+            [0.125, 0.125, 0.12],
+            { friction: 0.86, gravity: -8.2, angleStiffness: 0.24, windFactor: 0.95 }
+          );
+        }
+        this.coatLeftVerlet.reset(nx - f * 0.06, ny - 0.52, -f * 0.45, -1);
+
+        if (!this.coatRightVerlet) {
+          this.coatRightVerlet = new VR.VerletChain(
+            4,
+            [0.125, 0.125, 0.12],
+            { friction: 0.86, gravity: -8.2, angleStiffness: 0.24, windFactor: 0.95 }
+          );
+        }
+        this.coatRightVerlet.reset(nx + f * 0.06, ny - 0.52, -f * 0.25, -1);
+
+        if (!this.hairVerlet) {
+          this.hairVerlet = {
+            back: new VR.VerletChain(3, [0.11, 0.1], {
+              friction: 0.83,
+              gravity: -1.8,
+              angleStiffness: 0.42,
+              windFactor: 0.85,
+            }),
+            top: new VR.VerletChain(3, [0.11, 0.095], {
+              friction: 0.83,
+              gravity: -1.5,
+              angleStiffness: 0.44,
+              windFactor: 0.8,
+            }),
+            bang: new VR.VerletChain(3, [0.09, 0.08], {
+              friction: 0.84,
+              gravity: -2.2,
+              angleStiffness: 0.4,
+              windFactor: 0.78,
+            }),
+          };
+        }
+        const hx = nx;
+        const hy = ny + 0.18;
+        this.hairVerlet.back.reset(hx - f * 0.1, hy + 0.06, -f, 0.35);
+        this.hairVerlet.top.reset(hx, hy + 0.14, -f * 0.2, 1.0);
+        this.hairVerlet.bang.reset(hx + f * 0.11, hy + 0.06, f * 0.8, -0.35);
+      } else {
+        this.scarfChain = [
+          { x: nx, y: ny },
+          { x: nx - f * 0.12, y: ny - 0.04 },
+          { x: nx - f * 0.24, y: ny - 0.1 },
+          { x: nx - f * 0.35, y: ny - 0.17 },
+          { x: nx - f * 0.45, y: ny - 0.24 },
+        ];
+      }
     }
 
     reset() {
@@ -156,6 +238,9 @@
       this.leanAngle = 0.04;
       this.currentVisualHeight = CONFIG.HEIGHT_STANDING;
       this.lastPose = null;
+      this._weaponTrail = [];
+      this._trailSampleTimer = 0;
+      if (this.squashSpring) this.squashSpring.reset(0);
       this._resetScarf(0, 1.48);
     }
 
@@ -244,6 +329,8 @@
         ? Math.atan2(vector.uy, Math.max(1e-4, vector.ux))
         : Math.atan2(-vector.uy, Math.max(1e-4, -vector.ux));
       this.curveSlopeAngle = utils.clamp(slopeAng, -1.05, 1.05);
+      this._impulseSquash(-1.35);
+      this._impulseCloth(-this.facing * 3.8, 2.2);
       if (this.vectorSystem) {
         this.vectorSystem.onMount(vector);
       }
@@ -322,11 +409,24 @@
       this.heavyLandTimer = Math.max(0, this.heavyLandTimer - dt);
       this.landSquash = Math.max(0, this.landSquash - dt * 4.2);
       this.glFlashTimer = Math.max(0, this.glFlashTimer - dt);
+      if (this.squashSpring) {
+        this.squashSpring.update(dt);
+      }
+      if (this._weaponTrail && this._weaponTrail.length > 0) {
+        for (let i = this._weaponTrail.length - 1; i >= 0; i--) {
+          this._weaponTrail[i].life -= dt;
+          if (this._weaponTrail[i].life <= 0) {
+            this._weaponTrail.splice(i, 1);
+          }
+        }
+      }
 
       if (this.throwState.active) {
         this.throwState.timer += dt;
         if (!this.throwState.released && this.throwState.timer >= this.throwState.windup) {
           this.throwState.released = true;
+          this._impulseSquash(1.45);
+          this._impulseCloth(-Math.sign(this.throwState.ux || this.facing) * 3.8, 2.6);
           this.lastPose = this.computePose();
           const hand =
             this.lastPose && this.lastPose.frontHand
@@ -561,6 +661,8 @@
         this.vx = this.dashDir * CONFIG.DASH_SPEED;
         this.vy = 0;
         this.ghostTimer = 0;
+        this._impulseSquash(-1.35);
+        this._impulseCloth(-this.dashDir * 8.5, 2.2);
         this.particles.spawnJumpBurst(this.x, this.y, false);
       }
 
@@ -576,11 +678,14 @@
           this.flipDuration = 0.5;
           this.flipTimer = 0.5;
           this.flipDir = Math.abs(input.moveX) > 0.15 ? Math.sign(input.moveX) : -this.facing;
+          this._impulseSquash(2.1);
+          this._impulseCloth(-this.flipDir * 4.5, -3.5);
           this.particles.spawnJumpBurst(this.x, this.y, true);
         } else {
           this.flipDuration = 0.42;
           this.flipTimer = 0.42;
           this.flipDir = this.facing;
+          this._impulseSquash(1.5);
         }
       }
 
@@ -589,6 +694,8 @@
         if (!this.sliding && Math.abs(this.vx) >= CONFIG.SLIDE_MIN_SPEED) {
           this.sliding = true;
           this.vx *= CONFIG.SLIDE_BOOST;
+          this._impulseSquash(-1.5);
+          this._impulseCloth(-this.facing * 5.0, 2.4);
           this.particles.spawnLandingBurst(this.x, 0.75);
         }
         this.crouching = !this.sliding;
@@ -607,8 +714,9 @@
 
         this.ghostTimer -= dt;
         if (this.ghostTimer <= 0 && this.lastPose) {
-          this.particles.addGhost(this.lastPose);
-          this.ghostTimer = 0.032;
+          const spec = this.getCharacterStyleSpec();
+          this.particles.addGhost(this.lastPose, spec.accentBlack || null, 0.22);
+          this.ghostTimer = 0.028;
         }
       } else if (this.sliding) {
         this.vx = utils.moveToward(this.vx, 0, CONFIG.SLIDE_DECEL * dt);
@@ -671,6 +779,8 @@
           this.crouching = false;
           this.freeFallMode = false;
           this.jumpsRemaining = 1;
+          this._impulseSquash(2.55);
+          this._impulseCloth(0, -4.5);
           this.particles.spawnJumpBurst(this.x, this.y, false);
         } else if (this.jumpsRemaining > 0) {
           this.vy = CONFIG.DOUBLE_JUMP_VEL;
@@ -681,6 +791,8 @@
           this.flipDuration = 0.4;
           this.flipTimer = 0.4;
           this.flipDir = this.facing;
+          this._impulseSquash(2.4);
+          this._impulseCloth(-this.facing * 3.5, -4.0);
           this.particles.spawnJumpBurst(this.x, this.y, true);
         }
       }
@@ -798,6 +910,8 @@
           if (!this.grounded && this.vy < -2.2) {
             const intensity = utils.clamp(Math.abs(this.vy) / 14, 0.2, 2.2);
             this.landSquash = Math.min(1.0, intensity);
+            this._impulseSquash(-utils.clamp(intensity * 2.1, 0.8, 3.8));
+            this._impulseCloth(0, Math.abs(this.vy) * 0.55);
             if (this.vy < -11.0) {
               this.heavyLandTimer = 0.24;
             }
@@ -947,6 +1061,8 @@
       if (isAirLanding && this.vy < -2.2) {
         const intensity = utils.clamp(Math.abs(this.vy) / 14, 0.2, 2.2);
         this.landSquash = Math.min(1.0, intensity);
+        this._impulseSquash(-utils.clamp(intensity * 1.9, 0.7, 3.4));
+        this._impulseCloth(0, Math.abs(this.vy) * 0.45);
         if (this.vy < -11.0) {
           this.heavyLandTimer = 0.24;
         }
@@ -998,6 +1114,8 @@
           this.curveSpeed * Math.sin(this.curveSlopeAngle) + CONFIG.JUMP_VEL * 0.72
         );
         this.jumpsRemaining = 1;
+        this._impulseSquash(2.2);
+        this._impulseCloth(0, -4.2);
         this.particles.spawnJumpBurst(this.x, this.y, false);
         return 'handled';
       }
@@ -1013,6 +1131,8 @@
         this.vx = this.dashDir * CONFIG.DASH_SPEED;
         this.vy = 0;
         this.ghostTimer = 0;
+        this._impulseSquash(-1.35);
+        this._impulseCloth(-this.dashDir * 8.5, 2.2);
         this.particles.spawnJumpBurst(this.x, this.y, false);
         return 'handled';
       }
@@ -1028,6 +1148,8 @@
         this.flipDuration = 0.5;
         this.flipTimer = 0.5;
         this.flipDir = Math.abs(input.moveX) > 0.15 ? Math.sign(input.moveX) : -this.facing;
+        this._impulseSquash(2.1);
+        this._impulseCloth(-this.flipDir * 4.5, -3.5);
         this.particles.spawnJumpBurst(this.x, this.y, true);
         return 'handled';
       }
@@ -1121,6 +1243,8 @@
         this.surfingCurve = false;
         this.grounded = false;
         this.jumpsRemaining = 1;
+        this._impulseSquash(1.8);
+        this._impulseCloth(-this.facing * 2.5, -3.2);
         this.particles.spawnJumpBurst(this.x, this.y, false);
         return false;
       }
@@ -1181,6 +1305,8 @@
         this.jumpBufferTimer = 0;
         this.crouching = false;
         this.jumpsRemaining = 1;
+        this._impulseSquash(2.1);
+        this._impulseCloth(-this.facing * 2.5, -3.8);
         this.particles.spawnJumpBurst(this.x, this.y, false);
         return 'handled';
       }
@@ -1196,6 +1322,8 @@
         this.vx = dir * CONFIG.DASH_SPEED;
         this.vy = 0;
         this.ghostTimer = 0;
+        this._impulseSquash(-1.35);
+        this._impulseCloth(-dir * 8.5, 2.2);
         this.particles.spawnJumpBurst(this.x, this.y, false);
         return 'handled';
       }
@@ -1208,6 +1336,7 @@
         this.flipDuration = 0.5;
         this.flipTimer = 0.5;
         this.flipDir = Math.abs(input.moveX) > 0.15 ? Math.sign(input.moveX) : -this.facing;
+        this._impulseSquash(2.0);
         this.particles.spawnJumpBurst(this.x, this.y, true);
         return 'handled';
       }
@@ -1265,6 +1394,12 @@
       const isOverdrive = (v.speedMult || 1) > 1.55;
       if (isOverdrive) {
         this.glFlashTimer = Math.max(this.glFlashTimer, 0.1);
+        this.ghostTimer = (this.ghostTimer || 0) - dt;
+        if (this.ghostTimer <= 0 && this.lastPose) {
+          const spec = this.getCharacterStyleSpec();
+          this.particles.addGhost(this.lastPose, spec.accentBlack || null, 0.16);
+          this.ghostTimer = 0.048;
+        }
         if (Math.random() < dt * 14) {
           this.particles.spawnWindStreak(this.x, this.y + 0.85, Math.hypot(this.vx, this.vy) * 0.8);
         }
@@ -1372,7 +1507,11 @@
       this.leanAngle = utils.damp(this.leanAngle, targetLean, 14, dt);
     }
 
-    _solveTwoBoneIK(ax, ay, tx, ty, len1, len2, bendSign) {
+    _solveTwoBoneIK(ax, ay, tx, ty, len1, len2, bendSign, softMargin = 0.012) {
+      const VR = MathStickGame.VerletRig;
+      if (VR && VR.RigSolver) {
+        return VR.RigSolver.solveTwoBone(ax, ay, tx, ty, len1, len2, bendSign, softMargin);
+      }
       const dx = tx - ax;
       const dy = ty - ay;
       const rawDist = Math.hypot(dx, dy);
@@ -1410,20 +1549,34 @@
       const p = utils.mod(this.gaitPhase + phaseOffset, Math.PI * 2);
       let gaitX;
       let gaitY;
+      let toePitch = 0;
 
       if (p < Math.PI) {
+        // Stance phase: heel strike -> flat contact -> rear push-off ankle lift
         const t = p / Math.PI;
         gaitX = (0.5 - t) * strideLen;
-        gaitY = 0;
+        if (t < 0.25) {
+          toePitch = (1 - t / 0.25) * 0.28;
+          gaitY = 0;
+        } else if (t > 0.7) {
+          const pushT = (t - 0.7) / 0.3;
+          gaitY = liftHeight * 0.16 * pushT;
+          toePitch = -0.34 * pushT;
+        } else {
+          gaitY = 0;
+        }
       } else {
+        // Swing phase: lifted athletic arc forward
         const t = (p - Math.PI) / Math.PI;
         gaitX = (-0.5 + 0.5 * (1 - Math.cos(t * Math.PI))) * strideLen;
         gaitY = liftHeight * Math.sin(t * Math.PI);
+        toePitch = utils.lerp(-0.26, 0.22, t);
       }
 
       return {
         x: utils.lerp(idleX, gaitX, walkBlend),
         y: utils.lerp(0, gaitY, walkBlend),
+        toePitch: toePitch * walkBlend,
       };
     }
 
@@ -1449,58 +1602,345 @@
 
     _updateScarf(dt, pose) {
       if (!pose || !pose.neck) return;
-      if (!this.scarfChain || this.scarfChain.length < 5) {
+      if (!this.scarfVerlet && (!this.scarfChain || this.scarfChain.length < 5)) {
         this._resetScarf(pose.neck.x, pose.neck.y);
         return;
       }
 
-      const chain = this.scarfChain;
+      const f = pose.facing || this.facing || 1;
       const nx = pose.neck.x;
       const ny = pose.neck.y;
-      // Snap safely if teleported far away
-      if (Math.hypot(chain[0].x - nx, chain[0].y - ny) > 2.0) {
-        this._resetScarf(nx, ny);
-      }
-
-      chain[0].x = nx;
-      chain[0].y = ny;
-
-      const segLen = 0.135;
-      const flutter = this.idleTime * (this.dancing ? 5.5 : 4.2);
       const isPurple = this.dancing && this.danceStyle === 0;
       const isHonored = this.dancing && this.danceStyle === 2;
+      const groundFloor = this.grounded && this.flipTimer <= 0 && !isHonored ? this.y + 0.025 : null;
 
-      let windX = -this.facing * 0.85 - this.vx * 0.48;
-      let windY = -0.95 - this.vy * 0.28;
+      let windX = -f * 0.9 - this.vx * 0.65;
+      let windY = -this.vy * 0.35;
       if (isPurple) {
         const t = this.danceLocalTime % 7.8;
         const surge = this._smoothstep(4.8, 5.6, t) * (1 - this._smoothstep(6.7, 7.6, t));
-        windX = -0.65 - surge * 0.9;
-        windY = 0.35 + surge * 2.2;
+        windX = -0.8 - surge * 2.2;
+        windY = 1.4 + surge * 5.2;
       } else if (isHonored) {
-        windX = -this.facing * 0.45;
-        windY = -0.85;
+        windX = -f * 0.45 + Math.sin(this.idleTime * 1.4) * 0.55;
+        windY = 2.8 + Math.cos(this.idleTime * 1.1) * 0.8;
       } else if (this.dashTimer > 0) {
-        windX = -this.facing * 5.2;
-        windY = 0.25;
+        windX = -this.dashDir * 8.5;
+        windY = 1.2;
       } else if (this.ridingVector) {
-        windX = -this.vx * 0.72 - this.facing * 0.65;
-        windY = -this.vy * 0.52 + 0.15;
+        windX = -this.vx * 0.95 - f * 1.1;
+        windY = -this.vy * 0.65 + 1.1;
+      } else if (this.combat && this.combat.attackState && this.combat.attackState.active) {
+        windX -= f * 2.8;
+        windY += 1.4;
       }
 
-      for (let i = 1; i < chain.length; i++) {
-        const prev = chain[i - 1];
-        const curr = chain[i];
-        const wave = Math.sin(flutter - i * 1.15) * (isPurple ? 0.55 : 0.26);
+      if (this.scarfVerlet) {
+        this.scarfVerlet.update(dt, nx, ny, windX, windY, {
+          iterations: 5,
+          time: this.idleTime,
+          flutterFreq: isPurple ? 8.5 : 6.4,
+          flutterAmp: isPurple ? 2.6 : 1.05,
+          flutterPerpX: 0.25,
+          flutterPerpY: 1,
+          floorY: groundFloor,
+          restDirX: -f * 0.85,
+          restDirY: -0.25,
+          restPull: 0.9,
+          resetDirX: -f,
+          resetDirY: -0.25,
+        });
+        this.scarfChain = this.scarfVerlet.nodes;
+      } else if (this.scarfChain) {
+        const chain = this.scarfChain;
+        if (Math.hypot(chain[0].x - nx, chain[0].y - ny) > 2.0) {
+          this._resetScarf(nx, ny);
+        }
+        chain[0].x = nx;
+        chain[0].y = ny;
+        const segLen = 0.135;
+        const flutter = this.idleTime * (this.dancing ? 5.5 : 4.2);
+        for (let i = 1; i < chain.length; i++) {
+          const prev = chain[i - 1];
+          const curr = chain[i];
+          const wave = Math.sin(flutter - i * 1.15) * (isPurple ? 0.55 : 0.26);
+          curr.x += windX * dt * 0.85;
+          curr.y += (windY - 0.9 + wave) * dt * 0.85;
+          const dx = curr.x - prev.x;
+          const dy = curr.y - prev.y;
+          const dist = Math.hypot(dx, dy) || 1e-4;
+          curr.x = prev.x + (dx / dist) * segLen;
+          curr.y = prev.y + (dy / dist) * segLen;
+        }
+      }
 
-        curr.x += windX * dt * 0.85;
-        curr.y += (windY + wave) * dt * 0.85;
+      // Coat & Haori Twin Tail Verlet Simulation
+      if (this.coatLeftVerlet && this.coatRightVerlet && pose.hip) {
+        const hip = pose.hip;
+        const latOff = pose.frontFacing ? 0.08 : 0.045;
+        const leftAnchorX = pose.frontFacing ? hip.x - latOff : hip.x - f * latOff;
+        const rightAnchorX = pose.frontFacing ? hip.x + latOff : hip.x + f * 0.015;
+        const coatWindX = windX * 0.85;
+        const coatWindY = isHonored ? windY + 1.8 : windY;
 
-        const dx = curr.x - prev.x;
-        const dy = curr.y - prev.y;
-        const dist = Math.hypot(dx, dy) || 1e-4;
-        curr.x = prev.x + (dx / dist) * segLen;
-        curr.y = prev.y + (dy / dist) * segLen;
+        this.coatLeftVerlet.update(dt, leftAnchorX, hip.y - 0.01, coatWindX - (pose.frontFacing ? 0.8 : f * 0.5), coatWindY, {
+          iterations: 4,
+          time: this.idleTime,
+          flutterFreq: 5.8,
+          flutterAmp: 0.75,
+          floorY: groundFloor,
+          restDirX: pose.frontFacing ? -0.35 : -f * 0.35,
+          restDirY: -1,
+          restPull: 3.4,
+          resetDirX: -f * 0.4,
+          resetDirY: -1,
+        });
+        this.coatRightVerlet.update(dt, rightAnchorX, hip.y - 0.01, coatWindX + (pose.frontFacing ? 0.8 : f * 0.25), coatWindY, {
+          iterations: 4,
+          time: this.idleTime + 0.8,
+          flutterFreq: 6.1,
+          flutterAmp: 0.7,
+          floorY: groundFloor,
+          restDirX: pose.frontFacing ? 0.35 : -f * 0.12,
+          restDirY: -1,
+          restPull: 3.4,
+          resetDirX: -f * 0.2,
+          resetDirY: -1,
+        });
+      }
+
+      // Hair Verlet Locks (responsive secondary motion matching style anatomy in world coordinates)
+      if (this.hairVerlet && pose.head && pose.neck) {
+        let upX = pose.head.x - pose.neck.x;
+        let upY = pose.head.y - pose.neck.y;
+        const upL = Math.hypot(upX, upY);
+        if (upL > 1e-4) {
+          upX /= upL;
+          upY /= upL;
+        } else {
+          upX = 0;
+          upY = 1;
+        }
+        // World Y is UP, so forward vector orthogonal to head up-axis is (+upY * f, -upX * f)
+        const fwdX = upY * f;
+        const fwdY = -upX * f;
+        const hr = pose.headRadius || CONFIG.HEAD_RADIUS;
+        const hWindX = -this.vx * 0.45 + (isPurple ? -0.6 : 0);
+        const hWindY = -this.vy * 0.35 + (isHonored ? 2.4 : isPurple ? 2.8 : 0);
+
+        this.hairVerlet.back.update(
+          dt,
+          pose.head.x + (-fwdX * 0.56 + upX * 0.52) * hr,
+          pose.head.y + (-fwdY * 0.56 + upY * 0.52) * hr,
+          hWindX,
+          hWindY,
+          {
+            iterations: 3,
+            time: this.idleTime,
+            flutterFreq: 7.2,
+            flutterAmp: 0.4,
+            restDirX: -fwdX * 0.82 + upX * 0.45,
+            restDirY: -fwdY * 0.82 + upY * 0.45,
+            restPull: 14,
+            angleStiffness: 0.42,
+            resetDirX: -fwdX,
+            resetDirY: upY,
+          }
+        );
+        this.hairVerlet.top.update(
+          dt,
+          pose.head.x + upX * 0.78 * hr,
+          pose.head.y + upY * 0.78 * hr,
+          hWindX,
+          hWindY,
+          {
+            iterations: 3,
+            time: this.idleTime + 0.4,
+            flutterFreq: 7.0,
+            flutterAmp: 0.35,
+            restDirX: upX * 0.92 - fwdX * 0.22,
+            restDirY: upY * 0.92 - fwdY * 0.22,
+            restPull: 15,
+            angleStiffness: 0.46,
+            resetDirX: -fwdX * 0.2,
+            resetDirY: 1,
+          }
+        );
+        this.hairVerlet.bang.update(
+          dt,
+          pose.head.x + (fwdX * 0.62 + upX * 0.56) * hr,
+          pose.head.y + (fwdY * 0.62 + upY * 0.56) * hr,
+          hWindX * 0.75,
+          hWindY * 0.75,
+          {
+            iterations: 3,
+            time: this.idleTime + 1.1,
+            flutterFreq: 7.5,
+            flutterAmp: 0.32,
+            restDirX: fwdX * 0.84 - upX * 0.42,
+            restDirY: fwdY * 0.84 - upY * 0.42,
+            restPull: 14,
+            angleStiffness: 0.4,
+            resetDirX: fwdX,
+            resetDirY: -0.35,
+          }
+        );
+      }
+    }
+
+    _applySquashStretch(pose) {
+      if (!pose || !this.squashSpring) return;
+      if (this.flipTimer > 0) return;
+      const s = utils.clamp(this.squashSpring.value, -0.26, 0.28);
+      if (Math.abs(s) < 0.004) return;
+
+      const sy = 1 + s;
+      const sx = 1 / Math.sqrt(sy);
+      const ax = this.x;
+      const ay = this.y;
+      const keys = [
+        'hip', 'waist', 'shoulder', 'frontShoulder', 'backShoulder',
+        'frontHip', 'backHip', 'neck', 'head',
+        'frontKnee', 'frontFoot', 'frontToe',
+        'backKnee', 'backFoot', 'backToe',
+        'frontElbow', 'frontHand', 'backElbow', 'backHand',
+      ];
+      for (const k of keys) {
+        const pt = pose[k];
+        if (!pt) continue;
+        pt.x = ax + (pt.x - ax) * sx;
+        pt.y = ay + (pt.y - ay) * sy;
+      }
+      pose.headStretchX = sx;
+      pose.headStretchY = sy;
+    }
+
+    _applySpineDeform(pose, opts = {}) {
+      if (!pose || !pose.hip) return;
+      const f = pose.facing || 1;
+      const VR = MathStickGame.VerletRig || {};
+      const canGroundLunge =
+        opts.lungeStance &&
+        this.grounded &&
+        !this.surfingCurve &&
+        !this.ridingVector &&
+        !this.sliding &&
+        !this.crouching &&
+        Math.abs(this.vx) < 2.6;
+
+      if (opts.hipDrop && canGroundLunge) {
+        pose.hip.y = Math.max(this.y + 0.42, pose.hip.y - opts.hipDrop);
+      }
+
+      if (VR.RigSolver && !pose.frontFacing) {
+        const baseLean = opts.lean !== undefined ? opts.lean : this.leanAngle + (opts.leanDelta || 0);
+        const spine = VR.RigSolver.solveSpine({
+          hipX: pose.hip.x,
+          hipY: pose.hip.y,
+          torsoLen: CONFIG.TORSO_LEN,
+          neckLen: CONFIG.NECK_LEN,
+          headRadius: CONFIG.HEAD_RADIUS,
+          facing: f,
+          leanAngle: baseLean,
+          archBend: opts.archDelta || 0,
+          twist: opts.twistDelta || 0,
+          shoulderSpan: 0.055,
+          hipSpan: 0.036,
+        });
+        pose.waist = spine.waist;
+        pose.shoulder = spine.shoulder;
+        pose.frontShoulder = spine.frontShoulder;
+        pose.backShoulder = spine.backShoulder;
+        pose.frontHip = spine.frontHip;
+        pose.backHip = spine.backHip;
+        pose.neck = spine.neck;
+        pose.head = spine.head;
+        pose.spineAngle = spine.spineAngle;
+      }
+
+      if (canGroundLunge && opts.frontFootX !== undefined && opts.backFootX !== undefined) {
+        const fh = pose.frontHip || pose.hip;
+        const bh = pose.backHip || pose.hip;
+        const leg1 = this._solveTwoBoneIK(fh.x, fh.y, this.x + f * opts.frontFootX, this.y, CONFIG.THIGH_LEN, CONFIG.SHIN_LEN, f);
+        const leg2 = this._solveTwoBoneIK(bh.x, bh.y, this.x + f * opts.backFootX, this.y, CONFIG.THIGH_LEN, CONFIG.SHIN_LEN, f);
+        pose.frontKnee = { x: leg1.jx, y: leg1.jy };
+        pose.frontFoot = { x: leg1.ex, y: leg1.ey };
+        pose.frontToe = { x: leg1.ex + f * CONFIG.FOOT_LEN, y: Math.max(this.y, leg1.ey) };
+        pose.backKnee = { x: leg2.jx, y: leg2.jy };
+        pose.backFoot = { x: leg2.ex, y: leg2.ey };
+        pose.backToe = { x: leg2.ex + f * CONFIG.FOOT_LEN, y: Math.max(this.y, leg2.ey) };
+      }
+    }
+
+    _sampleWeaponTrail(pose) {
+      if (!pose || this.dancing) return;
+      const combatActive = Boolean(this.combat && this.combat.active && this.combat.attackState && this.combat.attackState.active);
+      const throwSwinging = Boolean(this.throwState && this.throwState.active && !this.throwState.released && this.throwState.timer >= this.throwState.windup * 0.55);
+      if (!combatActive && !throwSwinging) return;
+
+      if (!this._weaponTrail) this._weaponTrail = [];
+      const curTimer = combatActive ? this.combat.attackState.timer : this.throwState.timer;
+      const curKind = combatActive ? `atk_${this.combat.attackState.weaponIdx}_${this.combat.attackState.comboStep}` : 'throw';
+      if (this._lastTrailKind !== curKind || (this._lastTrailTimer !== undefined && curTimer < this._lastTrailTimer - 0.01)) {
+        this._trailStrokeSeq = (this._trailStrokeSeq || 0) + 1;
+      }
+      this._lastTrailKind = curKind;
+      this._lastTrailTimer = curTimer;
+      const strokeId = this._trailStrokeSeq || 1;
+
+      if (combatActive && pose.combatWeapon && pose.frontHand && pose.weaponWorldAngle !== undefined) {
+        const w = pose.combatWeapon;
+        const lenMap = { diff: 0.92, integ: 1.06, negate: 0.72, vector: 1.12 };
+        const tipDist = lenMap[w.id] || 0.88;
+        const ang = pose.weaponWorldAngle;
+        const tx = pose.frontHand.x + Math.cos(ang) * tipDist;
+        const ty = pose.frontHand.y + Math.sin(ang) * tipDist;
+        const bx = pose.frontHand.x + Math.cos(ang) * 0.16;
+        const by = pose.frontHand.y + Math.sin(ang) * 0.16;
+
+        this._weaponTrail.push({
+          trailId: 'main',
+          strokeId,
+          tx, ty, bx, by,
+          colorBlack: w.colorBlack,
+          colorLight: w.colorLight,
+          life: 0.14,
+          maxLife: 0.14,
+        });
+
+        if (w.id === 'negate' && pose.backHand && pose.offWeaponWorldAngle !== undefined) {
+          const oAng = pose.offWeaponWorldAngle;
+          this._weaponTrail.push({
+            trailId: 'off',
+            strokeId,
+            tx: pose.backHand.x + Math.cos(oAng) * 0.62,
+            ty: pose.backHand.y + Math.sin(oAng) * 0.62,
+            bx: pose.backHand.x + Math.cos(oAng) * 0.12,
+            by: pose.backHand.y + Math.sin(oAng) * 0.12,
+            colorBlack: w.colorBlack,
+            colorLight: w.colorLight,
+            life: 0.13,
+            maxLife: 0.13,
+          });
+        }
+      } else if (throwSwinging && pose.throwingSpear && pose.frontHand) {
+        const ang = pose.throwingSpear.angle;
+        this._weaponTrail.push({
+          trailId: 'main',
+          strokeId,
+          tx: pose.frontHand.x + Math.cos(ang) * 0.68,
+          ty: pose.frontHand.y + Math.sin(ang) * 0.68,
+          bx: pose.frontHand.x + Math.cos(ang) * 0.12,
+          by: pose.frontHand.y + Math.sin(ang) * 0.12,
+          colorBlack: '#f59e0b',
+          colorLight: '#d97706',
+          life: 0.15,
+          maxLife: 0.15,
+        });
+      }
+
+      if (this._weaponTrail.length > 20) {
+        this._weaponTrail.splice(0, this._weaponTrail.length - 20);
       }
     }
 
@@ -2154,6 +2594,10 @@
 
       const torsoLean = this.crouching ? 0.54 : 0.34;
       const bodyAng = Math.PI * 0.5 + theta - f * torsoLean;
+      const midLen = CONFIG.TORSO_LEN * 0.48;
+      const curveBend = f * (this.crouching ? 0.048 : 0.028);
+      const waistX = hipX + Math.cos(bodyAng + curveBend) * midLen;
+      const waistY = hipY + Math.sin(bodyAng + curveBend) * midLen;
       const shoulderX = hipX + Math.cos(bodyAng) * CONFIG.TORSO_LEN;
       const shoulderY = hipY + Math.sin(bodyAng) * CONFIG.TORSO_LEN;
       const headTiltAng = bodyAng + f * 0.12;
@@ -2162,11 +2606,16 @@
       const headX = neckX + Math.cos(headTiltAng) * CONFIG.HEAD_RADIUS;
       const headY = neckY + Math.sin(headTiltAng) * CONFIG.HEAD_RADIUS;
 
+      const frontHip = { x: hipX + f * 0.04 * cosT, y: hipY + f * 0.04 * sinT };
+      const backHip = { x: hipX - f * 0.04 * cosT, y: hipY - f * 0.04 * sinT };
+      const frontShoulder = { x: shoulderX + f * 0.062 * cosT, y: shoulderY + f * 0.062 * sinT };
+      const backShoulder = { x: shoulderX - f * 0.062 * cosT, y: shoulderY - f * 0.062 * sinT };
+
       this.currentVisualHeight = Math.max(1.3, headY + CONFIG.HEAD_RADIUS - this.y);
 
       const leg1 = this._solveTwoBoneIK(
-        hipX,
-        hipY,
+        frontHip.x,
+        frontHip.y,
         frontFootX,
         frontFootY,
         CONFIG.THIGH_LEN,
@@ -2174,8 +2623,8 @@
         f
       );
       const leg2 = this._solveTwoBoneIK(
-        hipX,
-        hipY,
+        backHip.x,
+        backHip.y,
         backFootX,
         backFootY,
         CONFIG.THIGH_LEN,
@@ -2188,14 +2637,14 @@
       const bBase = f > 0 ? Math.PI + theta + 0.18 : theta - 0.18;
 
       const arm1 = this._armFK(
-        shoulderX,
-        shoulderY,
+        frontShoulder.x,
+        frontShoulder.y,
         fBase + sway,
         f * (this.crouching ? 0.42 : 0.28)
       );
       const arm2 = this._armFK(
-        shoulderX,
-        shoulderY,
+        backShoulder.x,
+        backShoulder.y,
         bBase - sway,
         -f * 0.34
       );
@@ -2204,7 +2653,12 @@
         facing: f,
         eyeDir: { x: f * cosT, y: f * sinT },
         hip: { x: hipX, y: hipY },
+        waist: { x: waistX, y: waistY },
+        frontHip,
+        backHip,
         shoulder: { x: shoulderX, y: shoulderY },
+        frontShoulder,
+        backShoulder,
         neck: { x: neckX, y: neckY },
         head: { x: headX, y: headY },
         headRadius: CONFIG.HEAD_RADIUS,
@@ -2284,6 +2738,9 @@
         }
       }
 
+      this._applySquashStretch(pose);
+      this._sampleWeaponTrail(pose);
+
       return pose;
     }
 
@@ -2291,13 +2748,12 @@
       const st = this.throwState;
       const f = Math.abs(st.ux) > 0.12 ? Math.sign(st.ux) : pose.facing || 1;
       pose.facing = f;
-      const sh = pose.frontShoulder || pose.shoulder;
-      const bsh = pose.backShoulder || pose.shoulder;
       const aimAng = Math.atan2(st.uy, st.ux);
+      pose.eyeDir = { x: Math.cos(aimAng), y: Math.sin(aimAng) };
+
       const t = st.timer;
       const windup = Math.max(0.02, st.windup);
       const dur = Math.max(windup + 0.05, st.duration);
-
       const coilAng = aimAng + f * 2.25;
       let armAng = aimAng;
       let reach = 0.52;
@@ -2305,19 +2761,49 @@
       const peakWind = windup * 0.65;
       if (t < peakWind) {
         const p = utils.clamp(t / peakWind, 0, 1);
-        armAng = utils.lerp(aimAng + f * 0.4, coilAng, p * p);
+        const e = p * p;
+        armAng = utils.lerp(aimAng + f * 0.4, coilAng, e);
         reach = utils.lerp(0.42, 0.48, p);
+        this._applySpineDeform(pose, {
+          hipDrop: 0.06 * e,
+          leanDelta: -0.32 * e,
+          archDelta: -0.32 * e,
+          twistDelta: -0.78 * e,
+          lungeStance: true,
+          frontFootX: utils.lerp(0.16, 0.24, e),
+          backFootX: utils.lerp(-0.14, -0.32, e),
+        });
       } else if (t < windup) {
         const p = utils.clamp((t - peakWind) / (windup - peakWind), 0, 1);
         armAng = utils.lerp(coilAng, aimAng, p);
         reach = utils.lerp(0.48, 0.54, p);
+        this._applySpineDeform(pose, {
+          hipDrop: 0.08,
+          leanDelta: utils.lerp(-0.32, 0.26, p),
+          archDelta: utils.lerp(-0.32, 0.18, p),
+          twistDelta: utils.lerp(-0.78, 0.35, p),
+          lungeStance: true,
+          frontFootX: utils.lerp(0.24, 0.34, p),
+          backFootX: -0.32,
+        });
       } else {
         const p = utils.clamp((t - windup) / (dur - windup), 0, 1);
         const follow = 1 - Math.pow(1 - p, 2);
         armAng = aimAng - f * 0.48 * follow;
         reach = utils.lerp(0.54, 0.46, p);
+        this._applySpineDeform(pose, {
+          hipDrop: 0.08 * (1 - p * 0.5),
+          leanDelta: utils.lerp(0.36, 0.14, p),
+          archDelta: utils.lerp(0.24, 0.04, p),
+          twistDelta: utils.lerp(0.86, 0.25, p),
+          lungeStance: true,
+          frontFootX: 0.35,
+          backFootX: -0.3,
+        });
       }
 
+      const sh = pose.frontShoulder || pose.shoulder;
+      const bsh = pose.backShoulder || pose.shoulder;
       const hx = sh.x + Math.cos(armAng) * reach;
       const hy = sh.y + Math.sin(armAng) * reach;
       const arm1 = this._solveTwoBoneIK(
@@ -2332,10 +2818,11 @@
       pose.frontElbow = { x: arm1.jx, y: arm1.jy };
       pose.frontHand = { x: arm1.ex, y: arm1.ey };
 
-      // Off-hand sights & counterbalances the throw along target line
-      const guideReach = t < windup ? 0.42 : 0.24;
-      const gx = bsh.x + Math.cos(aimAng) * guideReach;
-      const gy = bsh.y + Math.sin(aimAng) * guideReach - 0.05;
+      // Off-hand sights forward then counterbalances back cleanly upon release
+      const guideReach = t < windup ? 0.44 : 0.32;
+      const guideAng = t < windup ? aimAng : aimAng + f * 2.1;
+      const gx = bsh.x + Math.cos(guideAng) * guideReach;
+      const gy = bsh.y + Math.sin(guideAng) * guideReach - 0.04;
       const arm2 = this._solveTwoBoneIK(
         bsh.x,
         bsh.y,
@@ -2350,7 +2837,7 @@
 
       if (!st.released) {
         pose.throwingSpear = {
-          angle: aimAng,
+          angle: armAng,
           ux: st.ux,
           uy: st.uy,
         };
@@ -2359,6 +2846,16 @@
 
     _applyParryPose(pose) {
       const f = pose.facing || 1;
+      this._applySpineDeform(pose, {
+        hipDrop: 0.08,
+        leanDelta: 0.2,
+        archDelta: -0.06,
+        twistDelta: 0.46,
+        lungeStance: true,
+        frontFootX: 0.28,
+        backFootX: -0.22,
+      });
+
       const sh = pose.frontShoulder || pose.shoulder;
       const bsh = pose.backShoulder || pose.shoulder;
 
@@ -2377,8 +2874,8 @@
       const guard2 = this._solveTwoBoneIK(
         bsh.x,
         bsh.y,
-        bsh.x + f * 0.24,
-        bsh.y - 0.04,
+        guard1.ex - f * 0.06,
+        guard1.ey - 0.12,
         CONFIG.UPPER_ARM_LEN,
         CONFIG.FOREARM_LEN,
         -f
@@ -2391,50 +2888,166 @@
 
     _applyCombatPose(pose, atk) {
       const f = pose.facing || 1;
-      const sh = pose.frontShoulder || pose.shoulder;
-      const bsh = pose.backShoulder || pose.shoulder;
       const p = utils.clamp(atk.timer / Math.max(0.05, atk.duration), 0, 1);
       const ease = 1 - Math.pow(1 - p, 3);
       const aim = atk.aimAngle || 0;
+      const VR = MathStickGame.VerletRig || {};
+      pose.eyeDir = { x: Math.cos(aim), y: Math.sin(aim) };
 
       if (atk.isSlam) {
-        // Vertical meteor plunge grip
-        const arm1 = this._solveTwoBoneIK(
-          sh.x,
-          sh.y,
-          sh.x + f * 0.14,
-          sh.y - 0.44,
-          CONFIG.UPPER_ARM_LEN,
-          CONFIG.FOREARM_LEN,
-          -f
-        );
-        const arm2 = this._solveTwoBoneIK(
-          bsh.x,
-          bsh.y,
-          bsh.x + f * 0.06,
-          bsh.y - 0.42,
-          CONFIG.UPPER_ARM_LEN,
-          CONFIG.FOREARM_LEN,
-          f
-        );
-        pose.frontElbow = { x: arm1.jx, y: arm1.jy };
-        pose.frontHand = { x: arm1.ex, y: arm1.ey };
-        pose.backElbow = { x: arm2.jx, y: arm2.jy };
-        pose.backHand = { x: arm2.ex, y: arm2.ey };
-        pose.weaponWorldAngle = -Math.PI * 0.5;
+        // Meteor Plunge: tucked torso with closed-chain two-handed downward grip
+        this._applySpineDeform(pose, {
+          leanDelta: 0.38,
+          archDelta: 0.24,
+          twistDelta: 0.2,
+        });
+        const sh = pose.frontShoulder || pose.shoulder;
+        const bsh = pose.backShoulder || pose.shoulder;
+        const slamAng = -Math.PI * 0.5;
+        if (VR.RigSolver) {
+          const twoHand = VR.RigSolver.solveTwoHandWeapon({
+            frontShoulder: sh,
+            backShoulder: bsh,
+            primaryHandTarget: { x: sh.x + f * 0.14, y: sh.y - 0.44 },
+            weaponAngle: slamAng,
+            gripSeparation: 0.14,
+            upperLen: CONFIG.UPPER_ARM_LEN,
+            foreLen: CONFIG.FOREARM_LEN,
+            facing: f,
+          });
+          pose.frontElbow = { x: twoHand.arm1.jx, y: twoHand.arm1.jy };
+          pose.frontHand = { x: twoHand.arm1.ex, y: twoHand.arm1.ey };
+          pose.backElbow = { x: twoHand.arm2.jx, y: twoHand.arm2.jy };
+          pose.backHand = { x: twoHand.arm2.ex, y: twoHand.arm2.ey };
+        } else {
+          const arm1 = this._solveTwoBoneIK(sh.x, sh.y, sh.x + f * 0.14, sh.y - 0.44, CONFIG.UPPER_ARM_LEN, CONFIG.FOREARM_LEN, -f);
+          const arm2 = this._solveTwoBoneIK(bsh.x, bsh.y, bsh.x + f * 0.06, bsh.y - 0.42, CONFIG.UPPER_ARM_LEN, CONFIG.FOREARM_LEN, f);
+          pose.frontElbow = { x: arm1.jx, y: arm1.jy };
+          pose.frontHand = { x: arm1.ex, y: arm1.ey };
+          pose.backElbow = { x: arm2.jx, y: arm2.jy };
+          pose.backHand = { x: arm2.ex, y: arm2.ey };
+        }
+        pose.weaponWorldAngle = slamAng;
         return;
       }
 
       if (atk.weaponIdx === 3) {
-        // Spear piston thrust along aim!
-        const thrustDist =
-          p < 0.2
-            ? utils.lerp(0.14, 0.06, p / 0.2)
-            : p < 0.65
-              ? utils.lerp(0.06, 0.56, (p - 0.2) / 0.45)
-              : utils.lerp(0.56, 0.36, (p - 0.65) / 0.35);
+        // Spear: coiled recoil followed by full-extension piston lunge with closed-chain two-hand shaft grip!
+        let thrustDist;
+        let twist;
+        let leanD;
+        if (p < 0.22) {
+          const u = p / 0.22;
+          thrustDist = utils.lerp(0.18, 0.05, u);
+          twist = utils.lerp(0.1, -0.68, u);
+          leanD = utils.lerp(0.05, -0.14, u);
+        } else if (p < 0.68) {
+          const u = (p - 0.22) / 0.46;
+          const snap = 1 - Math.pow(1 - u, 3);
+          thrustDist = utils.lerp(0.05, 0.56, snap);
+          twist = utils.lerp(-0.68, 0.85, snap);
+          leanD = utils.lerp(-0.14, 0.36, snap);
+        } else {
+          const u = (p - 0.68) / 0.32;
+          thrustDist = utils.lerp(0.56, 0.36, u);
+          twist = utils.lerp(0.85, 0.32, u);
+          leanD = utils.lerp(0.36, 0.14, u);
+        }
+
+        this._applySpineDeform(pose, {
+          hipDrop: 0.08,
+          leanDelta: leanD,
+          archDelta: 0.16,
+          twistDelta: twist,
+          lungeStance: true,
+          frontFootX: p < 0.22 ? 0.22 : 0.38,
+          backFootX: -0.32,
+        });
+
+        const sh = pose.frontShoulder || pose.shoulder;
+        const bsh = pose.backShoulder || pose.shoulder;
         const tx = sh.x + Math.cos(aim) * thrustDist;
         const ty = sh.y + Math.sin(aim) * thrustDist;
+        if (VR.RigSolver) {
+          const twoHand = VR.RigSolver.solveTwoHandWeapon({
+            frontShoulder: sh,
+            backShoulder: bsh,
+            primaryHandTarget: { x: tx, y: ty },
+            weaponAngle: aim,
+            gripSeparation: 0.22,
+            upperLen: CONFIG.UPPER_ARM_LEN,
+            foreLen: CONFIG.FOREARM_LEN,
+            facing: f,
+          });
+          pose.frontElbow = { x: twoHand.arm1.jx, y: twoHand.arm1.jy };
+          pose.frontHand = { x: twoHand.arm1.ex, y: twoHand.arm1.ey };
+          pose.backElbow = { x: twoHand.arm2.jx, y: twoHand.arm2.jy };
+          pose.backHand = { x: twoHand.arm2.ex, y: twoHand.arm2.ey };
+        } else {
+          const arm1 = this._solveTwoBoneIK(sh.x, sh.y, tx, ty, CONFIG.UPPER_ARM_LEN, CONFIG.FOREARM_LEN, -f);
+          pose.frontElbow = { x: arm1.jx, y: arm1.jy };
+          pose.frontHand = { x: arm1.ex, y: arm1.ey };
+        }
+        pose.weaponWorldAngle = aim;
+        return;
+      }
+
+      // Katana [1], Heavy Broadsword [2], Twin Blades [3] full-body 3-hit combo choreography
+      let sweepStart = aim + f * 1.48;
+      let sweepEnd = aim - f * 1.08;
+      let twistCurve = utils.lerp(-0.68, 0.78, ease);
+      let archCurve = utils.lerp(-0.22, 0.24, ease);
+      let leanCurve = utils.lerp(-0.08, 0.34, ease);
+      let lungeFront = utils.lerp(0.22, 0.34, ease);
+
+      if (atk.comboStep === 1) {
+        sweepStart = aim - f * 1.28;
+        sweepEnd = aim + f * 1.28;
+        twistCurve = utils.lerp(0.65, -0.65, ease);
+        archCurve = utils.lerp(0.18, -0.18, ease);
+        leanCurve = utils.lerp(0.24, 0.14, ease);
+        lungeFront = 0.3;
+      } else if (atk.comboStep === 2) {
+        sweepStart = aim + f * 1.92;
+        sweepEnd = aim - f * 1.38;
+        twistCurve = utils.lerp(-0.85, 0.92, ease);
+        archCurve = utils.lerp(-0.28, 0.3, ease);
+        leanCurve = utils.lerp(-0.12, 0.44, ease);
+        lungeFront = utils.lerp(0.24, 0.42, ease);
+      }
+
+      this._applySpineDeform(pose, {
+        hipDrop: atk.comboStep === 2 ? 0.11 : 0.06,
+        leanDelta: leanCurve,
+        archDelta: archCurve,
+        twistDelta: twistCurve,
+        lungeStance: true,
+        frontFootX: lungeFront,
+        backFootX: -0.3,
+      });
+
+      const sh = pose.frontShoulder || pose.shoulder;
+      const bsh = pose.backShoulder || pose.shoulder;
+      const swingAng = utils.lerp(sweepStart, sweepEnd, ease);
+      const tx = sh.x + Math.cos(swingAng) * 0.5;
+      const ty = sh.y + Math.sin(swingAng) * 0.5;
+
+      if (atk.weaponIdx === 1 && VR.RigSolver) {
+        const twoHand = VR.RigSolver.solveTwoHandWeapon({
+          frontShoulder: sh,
+          backShoulder: bsh,
+          primaryHandTarget: { x: tx, y: ty },
+          weaponAngle: swingAng,
+          gripSeparation: 0.13,
+          upperLen: CONFIG.UPPER_ARM_LEN,
+          foreLen: CONFIG.FOREARM_LEN,
+          facing: f,
+        });
+        pose.frontElbow = { x: twoHand.arm1.jx, y: twoHand.arm1.jy };
+        pose.frontHand = { x: twoHand.arm1.ex, y: twoHand.arm1.ey };
+        pose.backElbow = { x: twoHand.arm2.jx, y: twoHand.arm2.jy };
+        pose.backHand = { x: twoHand.arm2.ex, y: twoHand.arm2.ey };
+      } else {
         const arm1 = this._solveTwoBoneIK(
           sh.x,
           sh.y,
@@ -2446,62 +3059,44 @@
         );
         pose.frontElbow = { x: arm1.jx, y: arm1.jy };
         pose.frontHand = { x: arm1.ex, y: arm1.ey };
-        pose.weaponWorldAngle = aim;
-        return;
+
+        if (atk.weaponIdx === 2) {
+          const offAng = utils.lerp(sweepEnd * 0.85, sweepStart * 0.85, ease);
+          const arm2 = this._solveTwoBoneIK(
+            bsh.x,
+            bsh.y,
+            bsh.x + Math.cos(offAng) * 0.44,
+            bsh.y + Math.sin(offAng) * 0.44,
+            CONFIG.UPPER_ARM_LEN,
+            CONFIG.FOREARM_LEN,
+            f
+          );
+          pose.backElbow = { x: arm2.jx, y: arm2.jy };
+          pose.backHand = { x: arm2.ex, y: arm2.ey };
+          pose.offWeaponWorldAngle = offAng;
+        } else {
+          // Katana stylish off-hand counterbalance trailing behind
+          const arm2 = this._solveTwoBoneIK(
+            bsh.x,
+            bsh.y,
+            bsh.x - f * 0.28,
+            bsh.y - 0.18 + Math.sin(ease * Math.PI) * 0.1,
+            CONFIG.UPPER_ARM_LEN,
+            CONFIG.FOREARM_LEN,
+            f
+          );
+          pose.backElbow = { x: arm2.jx, y: arm2.jy };
+          pose.backHand = { x: arm2.ex, y: arm2.ey };
+        }
       }
 
-      let sweepStart = aim + f * 1.45;
-      let sweepEnd = aim - f * 1.05;
-      if (atk.comboStep === 1) {
-        sweepStart = aim - f * 1.25;
-        sweepEnd = aim + f * 1.25;
-      } else if (atk.comboStep === 2) {
-        sweepStart = aim + f * 1.85;
-        sweepEnd = aim - f * 1.3;
-      }
-      const swingAng = utils.lerp(sweepStart, sweepEnd, ease);
-      const tx = sh.x + Math.cos(swingAng) * 0.5;
-      const ty = sh.y + Math.sin(swingAng) * 0.5;
-      const arm1 = this._solveTwoBoneIK(
-        sh.x,
-        sh.y,
-        tx,
-        ty,
-        CONFIG.UPPER_ARM_LEN,
-        CONFIG.FOREARM_LEN,
-        -f
-      );
-      pose.frontElbow = { x: arm1.jx, y: arm1.jy };
-      pose.frontHand = { x: arm1.ex, y: arm1.ey };
       pose.weaponWorldAngle = swingAng;
 
-      // Twin blades off-hand counter-slash or broadsword 2-hand grip
-      if (atk.weaponIdx === 2) {
-        const offAng = utils.lerp(sweepEnd * 0.85, sweepStart * 0.85, ease);
-        const arm2 = this._solveTwoBoneIK(
-          bsh.x,
-          bsh.y,
-          bsh.x + Math.cos(offAng) * 0.44,
-          bsh.y + Math.sin(offAng) * 0.44,
-          CONFIG.UPPER_ARM_LEN,
-          CONFIG.FOREARM_LEN,
-          f
-        );
-        pose.backElbow = { x: arm2.jx, y: arm2.jy };
-        pose.backHand = { x: arm2.ex, y: arm2.ey };
-        pose.offWeaponWorldAngle = offAng;
-      } else if (atk.weaponIdx === 1) {
-        const arm2 = this._solveTwoBoneIK(
-          bsh.x,
-          bsh.y,
-          arm1.ex - Math.cos(swingAng) * 0.08,
-          arm1.ey - Math.sin(swingAng) * 0.08,
-          CONFIG.UPPER_ARM_LEN,
-          CONFIG.FOREARM_LEN,
-          f
-        );
-        pose.backElbow = { x: arm2.jx, y: arm2.jy };
-        pose.backHand = { x: arm2.ex, y: arm2.ey };
+      // Style-tinted afterimage burst at peak of Combo Step 3 finisher!
+      if (atk.comboStep === 2 && !atk._ghostEmitted && Math.abs(p - 0.36) < 0.16 && this.particles) {
+        atk._ghostEmitted = true;
+        const spec = this.getCharacterStyleSpec();
+        this.particles.addGhost(pose, spec.accentBlack || null, 0.18);
       }
     }
 
@@ -2538,27 +3133,83 @@
 
       const hipX = this.x;
       const hipY = this.y + hipHeight;
-
       const lean = this.leanAngle;
-      const shoulderX = hipX + f * Math.sin(lean) * CONFIG.TORSO_LEN;
-      const shoulderY = hipY + Math.cos(lean) * CONFIG.TORSO_LEN;
 
-      const headAngle = lean * (this.freeFallBlend > 0.3 ? 0.92 : 0.65);
-      const neckX = shoulderX + f * Math.sin(headAngle) * CONFIG.NECK_LEN;
-      const neckY = shoulderY + Math.cos(headAngle) * CONFIG.NECK_LEN;
-      const headX = neckX + f * Math.sin(headAngle) * CONFIG.HEAD_RADIUS;
-      const headY = neckY + Math.cos(headAngle) * CONFIG.HEAD_RADIUS;
+      // Spinal arch & counter-rotation 2.5D shoulder/hip twist
+      const vyNorm = utils.clamp(this.vy / CONFIG.JUMP_VEL, -1, 1);
+      const gaitTwist = -Math.sin(this.gaitPhase) * (0.24 + 0.2 * runBlend) * walkBlend * (1 - this.airBlend);
+      const stateTwist = this.dashTimer > 0 ? 0.5 : this.slideBlend * 0.3 + this.crouchBlend * 0.16;
+      const twist = utils.clamp(gaitTwist + stateTwist, -1, 1);
+
+      const archBend =
+        0.12 * runBlend * walkBlend +
+        0.3 * this.landSquash -
+        0.26 * this.slideBlend +
+        0.18 * vyNorm * this.airBlend;
+
+      const VR = MathStickGame.VerletRig || {};
+      let waist;
+      let shoulderX;
+      let shoulderY;
+      let neckX;
+      let neckY;
+      let headX;
+      let headY;
+      let frontShoulder;
+      let backShoulder;
+      let frontHip;
+      let backHip;
+
+      if (VR.RigSolver) {
+        const spine = VR.RigSolver.solveSpine({
+          hipX,
+          hipY,
+          torsoLen: CONFIG.TORSO_LEN,
+          neckLen: CONFIG.NECK_LEN,
+          headRadius: CONFIG.HEAD_RADIUS,
+          facing: f,
+          leanAngle: lean,
+          archBend,
+          twist,
+          headTiltFactor: this.freeFallBlend > 0.3 ? 0.92 : 0.65,
+          shoulderSpan: 0.055,
+          hipSpan: 0.036,
+        });
+        waist = spine.waist;
+        shoulderX = spine.shoulder.x;
+        shoulderY = spine.shoulder.y;
+        neckX = spine.neck.x;
+        neckY = spine.neck.y;
+        headX = spine.head.x;
+        headY = spine.head.y;
+        frontShoulder = spine.frontShoulder;
+        backShoulder = spine.backShoulder;
+        frontHip = spine.frontHip;
+        backHip = spine.backHip;
+      } else {
+        shoulderX = hipX + f * Math.sin(lean) * CONFIG.TORSO_LEN;
+        shoulderY = hipY + Math.cos(lean) * CONFIG.TORSO_LEN;
+        waist = { x: (hipX + shoulderX) * 0.5, y: (hipY + shoulderY) * 0.5 };
+        const headAngle = lean * (this.freeFallBlend > 0.3 ? 0.92 : 0.65);
+        neckX = shoulderX + f * Math.sin(headAngle) * CONFIG.NECK_LEN;
+        neckY = shoulderY + Math.cos(headAngle) * CONFIG.NECK_LEN;
+        headX = neckX + f * Math.sin(headAngle) * CONFIG.HEAD_RADIUS;
+        headY = neckY + Math.cos(headAngle) * CONFIG.HEAD_RADIUS;
+        frontShoulder = { x: shoulderX, y: shoulderY };
+        backShoulder = { x: shoulderX, y: shoulderY };
+        frontHip = { x: hipX, y: hipY };
+        backHip = { x: hipX, y: hipY };
+      }
 
       this.currentVisualHeight = Math.max(
         1.1,
         Math.max(headY, hipY) + CONFIG.HEAD_RADIUS - this.y
       );
 
-      // Foot targets
+      // Foot targets with heel/toe gait push-off
       const groundF1 = this._computeFootLocal(0, strideLen, liftHeight, 0.12, walkBlend);
       const groundF2 = this._computeFootLocal(Math.PI, strideLen, liftHeight, -0.12, walkBlend);
 
-      const vyNorm = utils.clamp(this.vy / CONFIG.JUMP_VEL, -1, 1);
       let airF1 = {
         x: utils.lerp(0.16, 0.22, Math.max(0, vyNorm)),
         y: utils.lerp(0.06, 0.34, (vyNorm + 1) * 0.5),
@@ -2573,15 +3224,12 @@
         let ff1;
         let ff2;
         if (this.freeFallDive) {
-          // Streamlined dive legs trailed straight behind/up
           ff1 = { x: -0.45, y: 1.55 };
           ff2 = { x: -0.35, y: 1.6 };
         } else if (this.freeFallBrake) {
-          // Spread skydiver brake legs
           ff1 = { x: -0.62, y: 1.28 };
           ff2 = { x: -0.42, y: 1.38 };
         } else {
-          // Wind flail kick
           const kick = Math.sin(this.idleTime * 13) * 0.16;
           ff1 = { x: 0.24 + kick, y: 0.28 };
           ff2 = { x: -0.24 - kick, y: 0.34 };
@@ -2627,8 +3275,8 @@
       }
 
       const leg1 = this._solveTwoBoneIK(
-        hipX,
-        hipY,
+        frontHip.x,
+        frontHip.y,
         this.x + f * localF1.x,
         this.y + localF1.y,
         CONFIG.THIGH_LEN,
@@ -2636,8 +3284,8 @@
         f
       );
       const leg2 = this._solveTwoBoneIK(
-        hipX,
-        hipY,
+        backHip.x,
+        backHip.y,
         this.x + f * localF2.x,
         this.y + localF2.y,
         CONFIG.THIGH_LEN,
@@ -2645,7 +3293,7 @@
         f
       );
 
-      // Arm swing
+      // Arm swing (driven from 2.5D twisted shoulders!)
       const armReachX = utils.lerp(0.08, 0.38, runBlend) * walkBlend;
       const armSwingLift = utils.lerp(0.02, 0.18, runBlend) * walkBlend;
       const armPhase1 = Math.sin(this.gaitPhase + Math.PI);
@@ -2715,38 +3363,53 @@
       }
 
       const arm1 = this._solveTwoBoneIK(
-        shoulderX,
-        shoulderY,
-        shoulderX + f * hand1Local.x,
-        shoulderY + hand1Local.y,
+        frontShoulder.x,
+        frontShoulder.y,
+        frontShoulder.x + f * hand1Local.x,
+        frontShoulder.y + hand1Local.y,
         CONFIG.UPPER_ARM_LEN,
         CONFIG.FOREARM_LEN,
         -f
       );
       const arm2 = this._solveTwoBoneIK(
-        shoulderX,
-        shoulderY,
-        shoulderX + f * hand2Local.x,
-        shoulderY + hand2Local.y,
+        backShoulder.x,
+        backShoulder.y,
+        backShoulder.x + f * hand2Local.x,
+        backShoulder.y + hand2Local.y,
         CONFIG.UPPER_ARM_LEN,
         CONFIG.FOREARM_LEN,
         -f
       );
 
       const footLen = CONFIG.FOOT_LEN;
+      const pitchAtt = (1 - this.airBlend) * (1 - this.slideBlend) * (this.dashTimer > 0 ? 0 : 1);
+      const p1 = (groundF1.toePitch || 0) * pitchAtt;
+      const p2 = (groundF2.toePitch || 0) * pitchAtt;
+      const toe1Y = this.grounded && !this.sliding && this.airBlend < 0.1
+        ? Math.max(this.y, leg1.ey + Math.sin(p1) * footLen)
+        : leg1.ey + Math.sin(p1) * footLen;
+      const toe2Y = this.grounded && !this.sliding && this.airBlend < 0.1
+        ? Math.max(this.y, leg2.ey + Math.sin(p2) * footLen)
+        : leg2.ey + Math.sin(p2) * footLen;
+
       const pose = {
         facing: f,
         hip: { x: hipX, y: hipY },
+        waist,
+        frontHip,
+        backHip,
         shoulder: { x: shoulderX, y: shoulderY },
+        frontShoulder,
+        backShoulder,
         neck: { x: neckX, y: neckY },
         head: { x: headX, y: headY },
         headRadius: CONFIG.HEAD_RADIUS,
         frontKnee: { x: leg1.jx, y: leg1.jy },
         frontFoot: { x: leg1.ex, y: leg1.ey },
-        frontToe: { x: leg1.ex + f * footLen, y: Math.max(this.y, leg1.ey) },
+        frontToe: { x: leg1.ex + f * footLen * Math.cos(p1), y: toe1Y },
         backKnee: { x: leg2.jx, y: leg2.jy },
         backFoot: { x: leg2.ex, y: leg2.ey },
-        backToe: { x: leg2.ex + f * footLen, y: Math.max(this.y, leg2.ey) },
+        backToe: { x: leg2.ex + f * footLen * Math.cos(p2), y: toe2Y },
         frontElbow: { x: arm1.jx, y: arm1.jy },
         frontHand: { x: arm1.ex, y: arm1.ey },
         backElbow: { x: arm2.jx, y: arm2.jy },
@@ -2769,7 +3432,12 @@
       const sin = Math.sin(angle);
       const keys = [
         'hip',
+        'waist',
+        'frontHip',
+        'backHip',
         'shoulder',
+        'frontShoulder',
+        'backShoulder',
         'neck',
         'head',
         'frontKnee',
@@ -2785,6 +3453,7 @@
       ];
       for (const k of keys) {
         const pt = pose[k];
+        if (!pt) continue;
         const dx = pt.x - cx;
         const dy = pt.y - cy;
         pt.x = cx + dx * cos - dy * sin;
@@ -2813,28 +3482,40 @@
       return sprite;
     }
 
-    _drawTaperedSegment(ctx, x1, y1, x2, y2, r1, r2) {
+    _drawTaperedSegment(ctx, x1, y1, x2, y2, r1, r2, rMid = null) {
       const dx = x2 - x1;
       const dy = y2 - y1;
       const len = Math.hypot(dx, dy);
+      const sr1 = Math.max(0.5, r1);
+      const sr2 = Math.max(0.5, r2);
       if (len < 0.5) {
         ctx.beginPath();
-        ctx.arc(x1, y1, r1, 0, Math.PI * 2);
+        ctx.arc(x1, y1, sr1, 0, Math.PI * 2);
         ctx.fill();
         return;
       }
-      const nx = (-dy / len);
-      const ny = (dx / len);
+      const nx = -dy / len;
+      const ny = dx / len;
       const ang = Math.atan2(dy, dx);
+      const sMid = rMid !== null ? Math.max(0.5, rMid) : (sr1 + sr2) * 0.5;
+      const mx = (x1 + x2) * 0.5;
+      const my = (y1 + y2) * 0.5;
       ctx.beginPath();
-      ctx.arc(x1, y1, r1, ang + Math.PI * 0.5, ang - Math.PI * 0.5, false);
-      ctx.lineTo(x2 + nx * r2, y2 + ny * r2);
-      ctx.arc(x2, y2, r2, ang - Math.PI * 0.5, ang + Math.PI * 0.5, false);
+      ctx.arc(x1, y1, sr1, ang + Math.PI * 0.5, ang - Math.PI * 0.5, false);
+      if (rMid !== null) {
+        ctx.quadraticCurveTo(mx + nx * sMid, my + ny * sMid, x2 + nx * sr2, y2 + ny * sr2);
+      } else {
+        ctx.lineTo(x2 + nx * sr2, y2 + ny * sr2);
+      }
+      ctx.arc(x2, y2, sr2, ang - Math.PI * 0.5, ang + Math.PI * 0.5, false);
+      if (rMid !== null) {
+        ctx.quadraticCurveTo(mx - nx * sMid, my - ny * sMid, x1 - nx * sr1, y1 - ny * sr1);
+      }
       ctx.closePath();
       ctx.fill();
     }
 
-    _drawLimb(ctx, p1, p2, p3, p4, width, color, gridRenderer, camera, isLeg = false) {
+    _drawLimb(ctx, p1, p2, p3, p4, width, color, gridRenderer, camera, isLeg = false, rimColor = null) {
       const hw = gridRenderer.width * 0.5;
       const hh = gridRenderer.height * 0.5;
       const cx = camera.x;
@@ -2848,40 +3529,85 @@
       const x3 = hw + (p3.x - cx) * ppu;
       const y3 = hh - (p3.y - cy) * ppu;
 
-      const rRoot = width * (isLeg ? 0.62 : 0.52);
-      const rMid = width * (isLeg ? 0.48 : 0.42);
-      const rTip = width * (isLeg ? 0.36 : 0.32);
+      const rRoot = width * (isLeg ? 0.64 : 0.54);
+      const rUpperMid = width * (isLeg ? 0.61 : 0.51);
+      const rMid = width * (isLeg ? 0.45 : 0.39);
+      const rLowerMid = width * (isLeg ? 0.53 : 0.45);
+      const rTip = width * (isLeg ? 0.32 : 0.29);
 
       ctx.fillStyle = color;
-      this._drawTaperedSegment(ctx, x1, y1, x2, y2, rRoot, rMid);
-      this._drawTaperedSegment(ctx, x2, y2, x3, y3, rMid, rTip);
+      this._drawTaperedSegment(ctx, x1, y1, x2, y2, rRoot, rMid, rUpperMid);
+      this._drawTaperedSegment(ctx, x2, y2, x3, y3, rMid, rTip, rLowerMid);
+
+      // Subtle sculpted joint cap
+      ctx.beginPath();
+      ctx.arc(x2, y2, Math.max(0.8, rMid * 1.04), 0, Math.PI * 2);
+      ctx.fill();
+
+      if (rimColor && ppu >= 22) {
+        ctx.save();
+        ctx.strokeStyle = rimColor;
+        ctx.globalAlpha *= 0.28;
+        ctx.lineWidth = Math.max(1.0, width * 0.16);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.lineTo(x3, y3);
+        ctx.stroke();
+        ctx.restore();
+      }
 
       if (p4) {
-        // Stylized sculpted shoe wedge
+        // Articulated Alan-Becker style shoe silhouette with heel & pitched toe
         const x4 = hw + (p4.x - cx) * ppu;
         const y4 = hh - (p4.y - cy) * ppu;
         const fdx = x4 - x3;
         const fdy = y4 - y3;
         const flen = Math.hypot(fdx, fdy) || 1;
-        const fnx = -fdy / flen;
-        const fny = fdx / flen;
+        const ux = fdx / flen;
+        const uy = fdy / flen;
+        const fnx = -uy;
+        const fny = ux;
+        const heelX = x3 - ux * rTip * 0.55;
+        const heelY = y3 - uy * rTip * 0.55;
+        const midArchX = (x3 + x4) * 0.52;
+        const midArchY = (y3 + y4) * 0.52;
+        const toeTipX = x4 + ux * rTip * 0.72;
+        const toeTipY = y4 + uy * rTip * 0.72;
+
         ctx.beginPath();
-        ctx.arc(x3, y3, rTip * 1.15, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(x3 + fnx * rTip * 1.05, y3 + fny * rTip * 1.05);
-        ctx.lineTo(x4 + (fdx / flen) * rTip * 0.6, y4 + (fdy / flen) * rTip * 0.6);
-        ctx.lineTo(x3 - fnx * rTip * 0.9, y3 - fny * rTip * 0.9);
+        ctx.moveTo(heelX + fnx * rTip * 1.08, heelY + fny * rTip * 1.08);
+        ctx.quadraticCurveTo(
+          midArchX + fnx * rTip * 0.95,
+          midArchY + fny * rTip * 0.95,
+          toeTipX,
+          toeTipY
+        );
+        ctx.quadraticCurveTo(
+          midArchX - fnx * rTip * 0.58,
+          midArchY - fny * rTip * 0.58,
+          heelX - fnx * rTip * 0.92,
+          heelY - fny * rTip * 0.92
+        );
+        ctx.arc(heelX, heelY, Math.max(0.8, rTip * 0.95), Math.atan2(-fny, -fnx), Math.atan2(fny, fnx), false);
         ctx.closePath();
         ctx.fill();
       } else {
-        // Tapered anime hand silhouette extending cleanly from wrist
+        // Sculpted forearm wrist + gripping/bladed martial hand silhouette
         const hdx = x3 - x2;
         const hdy = y3 - y2;
         const hlen = Math.hypot(hdx, hdy) || 1;
-        const tipX = x3 + (hdx / hlen) * Math.max(3, ppu * 0.05);
-        const tipY = y3 + (hdy / hlen) * Math.max(3, ppu * 0.05);
-        this._drawTaperedSegment(ctx, x3, y3, tipX, tipY, rTip * 1.08, rTip * 0.55);
+        const ux = hdx / hlen;
+        const uy = hdy / hlen;
+        const fistLen = Math.max(3.2, ppu * 0.056);
+        const midX = x3 + ux * fistLen * 0.45;
+        const midY = y3 + uy * fistLen * 0.45;
+        const tipX = x3 + ux * fistLen;
+        const tipY = y3 + uy * fistLen;
+        this._drawTaperedSegment(ctx, x3, y3, midX, midY, rTip * 1.02, rTip * 1.24, rTip * 1.2);
+        this._drawTaperedSegment(ctx, midX, midY, tipX, tipY, rTip * 1.22, rTip * 0.56);
       }
     }
 
@@ -2928,10 +3654,238 @@
       for (let i = 0; i < n - 1; i++) {
         const r1 = Math.max(1.2, ppu * 0.044 * (1 - i / n));
         const r2 = Math.max(0.6, ppu * 0.044 * (1 - (i + 1) / n));
-        ctx.globalAlpha = 0.92 * (1 - i * 0.14);
+        ctx.globalAlpha = 0.92 * (1 - i * 0.11);
         this._drawTaperedSegment(ctx, ptsX[i], ptsY[i], ptsX[i + 1], ptsY[i + 1], r1, r2);
       }
       ctx.restore();
+    }
+
+    _drawVerletCoatFlaps(ctx, pose, camera, gridRenderer, spec, coatFill, edgeColor, isBlack) {
+      if (!pose || !pose.hip) return;
+      if (!this.coatLeftVerlet && !this.coatRightVerlet) return;
+      const hw = gridRenderer.width * 0.5;
+      const hh = gridRenderer.height * 0.5;
+      const cx = camera.x;
+      const cy = camera.y;
+      const ppu = camera.ppu;
+      const isBenimaru = spec && spec.id === 'benimaru' && !this.dancing;
+
+      const drawChain = (verlet, frontLayer) => {
+        if (!verlet || !verlet.nodes || verlet.nodes.length < 3) return;
+        const nodes = verlet.nodes;
+        if (Math.hypot(nodes[0].x - pose.hip.x, nodes[0].y - pose.hip.y) > 1.8) return;
+
+        const n = nodes.length;
+        const sx = [];
+        const sy = [];
+        for (let i = 0; i < n; i++) {
+          sx.push(hw + (nodes[i].x - cx) * ppu);
+          sy.push(hh - (nodes[i].y - cy) * ppu);
+        }
+
+        const leftX = [];
+        const leftY = [];
+        const rightX = [];
+        const rightY = [];
+        for (let i = 0; i < n; i++) {
+          const iPrev = Math.max(0, i - 1);
+          const iNext = Math.min(n - 1, i + 1);
+          let dx = sx[iNext] - sx[iPrev];
+          let dy = sy[iNext] - sy[iPrev];
+          const len = Math.hypot(dx, dy) || 1;
+          dx /= len;
+          dy /= len;
+          const nx = -dy;
+          const ny = dx;
+          const t = i / (n - 1);
+          const halfW = ppu * (0.046 + t * (isBenimaru ? 0.088 : 0.068));
+          leftX.push(sx[i] + nx * halfW);
+          leftY.push(sy[i] + ny * halfW);
+          rightX.push(sx[i] - nx * halfW);
+          rightY.push(sy[i] - ny * halfW);
+        }
+
+        ctx.save();
+        ctx.globalAlpha *= frontLayer ? 0.95 : 0.78;
+        ctx.fillStyle = coatFill;
+        ctx.strokeStyle = edgeColor;
+        ctx.lineWidth = Math.max(1.2, ppu * (isBenimaru ? 0.025 : 0.018));
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(leftX[0], leftY[0]);
+        for (let i = 1; i < n - 1; i++) {
+          const mx = (leftX[i] + leftX[i + 1]) * 0.5;
+          const my = (leftY[i] + leftY[i + 1]) * 0.5;
+          ctx.quadraticCurveTo(leftX[i], leftY[i], mx, my);
+        }
+        ctx.lineTo(leftX[n - 1], leftY[n - 1]);
+        ctx.lineTo(
+          sx[n - 1] + (sx[n - 1] - sx[n - 2]) * 0.22,
+          sy[n - 1] + (sy[n - 1] - sy[n - 2]) * 0.22
+        );
+        ctx.lineTo(rightX[n - 1], rightY[n - 1]);
+        for (let i = n - 2; i >= 1; i--) {
+          const mx = (rightX[i] + rightX[i - 1]) * 0.5;
+          const my = (rightY[i] + rightY[i - 1]) * 0.5;
+          ctx.quadraticCurveTo(rightX[i], rightY[i], mx, my);
+        }
+        ctx.lineTo(rightX[0], rightY[0]);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Benimaru haori ember/gold seam near hem
+        if (isBenimaru && frontLayer && ppu >= 20) {
+          ctx.strokeStyle = isBlack ? '#fbbf24' : '#f59e0b';
+          ctx.lineWidth = Math.max(1.0, ppu * 0.016);
+          ctx.beginPath();
+          ctx.moveTo(leftX[n - 2], leftY[n - 2]);
+          ctx.lineTo(rightX[n - 2], rightY[n - 2]);
+          ctx.stroke();
+        }
+        ctx.restore();
+      };
+
+      drawChain(this.coatLeftVerlet, false);
+      drawChain(this.coatRightVerlet, true);
+    }
+
+    _drawTojiCursedWorm(ctx, pose, sShX, sShY, sHipX, sHipY, shHalf, hpHalf, px, py, ppu) {
+      const f = pose.facing || 1;
+      const sx = pose.frontFacing ? sShX - shHalf * 0.72 : sShX - px * f * shHalf * 0.78;
+      const sy = pose.frontFacing ? sShY - ppu * 0.02 : sShY - py * f * shHalf * 0.78;
+      const hx = pose.frontFacing ? sHipX + hpHalf * 0.85 : sHipX + px * f * hpHalf * 0.92;
+      const hy = pose.frontFacing ? sHipY - ppu * 0.01 : sHipY + py * f * hpHalf * 0.92;
+      const ctrlX = (sx + hx) * 0.5 + f * ppu * 0.03;
+      const ctrlY = (sy + hy) * 0.5 + ppu * 0.03;
+
+      ctx.save();
+      const segs = 7;
+      const segR = Math.max(2.6, ppu * 0.044);
+      for (let i = segs; i >= 0; i--) {
+        const t = i / segs;
+        const omt = 1 - t;
+        const bx = omt * omt * sx + 2 * omt * t * ctrlX + t * t * hx;
+        const by = omt * omt * sy + 2 * omt * t * ctrlY + t * t * hy;
+        const r = segR * (1 - t * 0.28);
+        ctx.fillStyle = i % 2 === 0 ? '#7e22ce' : '#9333ea';
+        ctx.strokeStyle = '#d8b4fe';
+        ctx.lineWidth = Math.max(0.8, ppu * 0.012);
+        ctx.beginPath();
+        ctx.arc(bx, by, r, 0, Math.PI * 2);
+        ctx.fill();
+        if (i % 2 === 0) ctx.stroke();
+      }
+
+      // Iconic purple worm head perched by shoulder
+      const wHeadX = sx - f * ppu * 0.02;
+      const wHeadY = sy - ppu * 0.03 + Math.sin(this.idleTime * 5.2) * 1.4;
+      const hrX = Math.max(3.2, segR * 1.28);
+      const hrY = Math.max(2.5, segR * 0.95);
+      ctx.fillStyle = '#a855f7';
+      ctx.strokeStyle = '#e9d5ff';
+      ctx.lineWidth = Math.max(1.0, ppu * 0.014);
+      ctx.beginPath();
+      ctx.ellipse(wHeadX, wHeadY, hrX, hrY, -f * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Tiny gleaming worm eyes
+      if (hrX >= 3.5) {
+        ctx.fillStyle = '#f8fafc';
+        const eyeOff = f * hrX * 0.32;
+        ctx.beginPath();
+        ctx.arc(wHeadX + eyeOff, wHeadY - hrY * 0.25, Math.max(0.9, hrX * 0.22), 0, Math.PI * 2);
+        ctx.arc(wHeadX + eyeOff * 0.35, wHeadY + hrY * 0.15, Math.max(0.8, hrX * 0.18), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    _renderWeaponSmearTrails(ctx, camera, gridRenderer, theme) {
+      if (!this._weaponTrail || this._weaponTrail.length < 2) return;
+      const isBlack = !theme || theme.bg === '#000000';
+      const hw = gridRenderer.width * 0.5;
+      const hh = gridRenderer.height * 0.5;
+      const cx = camera.x;
+      const cy = camera.y;
+      const ppu = camera.ppu;
+
+      const drawStream = (samples) => {
+        if (samples.length < 2) return;
+        const pts = samples.map((s) => ({
+          strokeId: s.strokeId,
+          tx: hw + (s.tx - cx) * ppu,
+          ty: hh - (s.ty - cy) * ppu,
+          bx: hw + (s.bx - cx) * ppu,
+          by: hh - (s.by - cy) * ppu,
+          ratio: utils.clamp(s.life / Math.max(0.01, s.maxLife), 0, 1),
+          col: isBlack ? s.colorBlack : s.colorLight,
+        }));
+
+        ctx.save();
+        if (isBlack) ctx.globalCompositeOperation = 'lighter';
+        const maxJumpPx = Math.max(ppu * 1.15, 72);
+        const spans = [];
+        let curSpan = [pts[0]];
+        for (let i = 1; i < pts.length; i++) {
+          const prev = pts[i - 1];
+          const curr = pts[i];
+          const jump = Math.hypot(curr.tx - prev.tx, curr.ty - prev.ty);
+          if (curr.strokeId !== prev.strokeId || jump > maxJumpPx) {
+            if (curSpan.length >= 2) spans.push(curSpan);
+            curSpan = [curr];
+          } else {
+            curSpan.push(curr);
+          }
+        }
+        if (curSpan.length >= 2) spans.push(curSpan);
+
+        for (const span of spans) {
+          for (let i = 0; i < span.length - 1; i++) {
+            const a = span[i];
+            const b = span[i + 1];
+            const alpha = Math.min(a.ratio, b.ratio) * (isBlack ? 0.5 : 0.36);
+            if (alpha <= 0.02) continue;
+            ctx.fillStyle = b.col;
+            ctx.globalAlpha = alpha;
+            ctx.beginPath();
+            ctx.moveTo(a.bx, a.by);
+            ctx.lineTo(a.tx, a.ty);
+            ctx.lineTo(b.tx, b.ty);
+            ctx.lineTo(b.bx, b.by);
+            ctx.closePath();
+            ctx.fill();
+          }
+
+          // Razor-crisp bright slash tip spline
+          const last = span[span.length - 1];
+          ctx.strokeStyle = isBlack ? '#ffffff' : last.col;
+          ctx.globalAlpha = utils.clamp(last.ratio * 0.88, 0, 0.9);
+          ctx.lineWidth = Math.max(1.8, ppu * 0.036);
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.beginPath();
+          ctx.moveTo(span[0].tx, span[0].ty);
+          for (let i = 1; i < span.length - 1; i++) {
+            const mx = (span[i].tx + span[i + 1].tx) * 0.5;
+            const my = (span[i].ty + span[i + 1].ty) * 0.5;
+            ctx.quadraticCurveTo(span[i].tx, span[i].ty, mx, my);
+          }
+          ctx.lineTo(last.tx, last.ty);
+          ctx.stroke();
+        }
+        ctx.restore();
+      };
+
+      const mainSamples = [];
+      const offSamples = [];
+      for (const s of this._weaponTrail) {
+        if (s.trailId === 'off') offSamples.push(s);
+        else mainSamples.push(s);
+      }
+      drawStream(mainSamples);
+      drawStream(offSamples);
     }
 
     _drawHakamaLeg(ctx, p1, p2, p3, p4, width, clothColor, shoeColor, rimColor, gridRenderer, camera, isBack) {
@@ -2949,23 +3903,22 @@
       const y3 = hh - (p3.y - cy) * ppu;
 
       const rRoot = width * 1.05;
-      const rKnee = width * 1.48;
-      const rAnkle = width * 1.24;
+      const rKnee = width * 1.65;
+      const rAnkle = width * 1.32;
 
       ctx.fillStyle = clothColor;
-      this._drawTaperedSegment(ctx, x1, y1, x2, y2, rRoot, rKnee);
-      this._drawTaperedSegment(ctx, x2, y2, x3, y3, rKnee, rAnkle);
+      this._drawTaperedSegment(ctx, x1, y1, x2, y2, rRoot, rKnee, width * 1.46);
+      this._drawTaperedSegment(ctx, x2, y2, x3, y3, rKnee, rAnkle, width * 1.56);
 
       if (rimColor) {
         ctx.save();
         ctx.strokeStyle = rimColor;
-        ctx.globalAlpha *= isBack ? 0.35 : 0.65;
+        ctx.globalAlpha *= isBack ? 0.34 : 0.62;
         ctx.lineWidth = Math.max(1.1, ppu * 0.018);
         ctx.lineCap = 'round';
         ctx.beginPath();
         ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
-        ctx.lineTo(x3, y3);
+        ctx.quadraticCurveTo(x2, y2, x3, y3);
         ctx.stroke();
         ctx.restore();
       }
@@ -2981,18 +3934,18 @@
         const rTip = width * 0.42;
         ctx.fillStyle = shoeColor;
         ctx.beginPath();
-        ctx.arc(x3, y3, rTip * 1.15, 0, Math.PI * 2);
+        ctx.arc(x3, y3, Math.max(0.8, rTip * 1.15), 0, Math.PI * 2);
         ctx.fill();
         ctx.beginPath();
         ctx.moveTo(x3 + fnx * rTip * 1.05, y3 + fny * rTip * 1.05);
-        ctx.lineTo(x4 + (fdx / flen) * rTip * 0.6, y4 + (fdy / flen) * rTip * 0.6);
+        ctx.lineTo(x4 + (fdx / flen) * rTip * 0.65, y4 + (fdy / flen) * rTip * 0.65);
         ctx.lineTo(x3 - fnx * rTip * 0.9, y3 - fny * rTip * 0.9);
         ctx.closePath();
         ctx.fill();
       }
     }
 
-    _drawHairSpikes(ctx, sHeadX, sHeadY, sNkX, sNkY, headPx, pose, spec, primaryColor, accentColor, isBlack) {
+    _drawHairSpikes(ctx, sHeadX, sHeadY, sNkX, sNkY, headPx, pose, spec, primaryColor, accentColor, isBlack, ppu = 50) {
       if (!spec || !spec.hairColor) return;
       const f = pose.facing || 1;
       let upX = sHeadX - sNkX;
@@ -3005,21 +3958,61 @@
         upX = 0;
         upY = -1;
       }
-      // Forward axis orthogonal to head's upward vector
+      // Forward axis orthogonal to head's upward vector (Screen Y points DOWN)
       const rx = -upY * f;
       const ry = upX * f;
       const windPush = utils.clamp(-this.vx * f * 0.04, -0.35, 0.45) + 0.08 * Math.sin(this.idleTime * 7.5);
 
-      const drawSpike = (baseFwd, baseUp, tipFwd, tipUp, halfW, fillCol, tipAccent = null) => {
+      // Dynamic Verlet lock tip displacement relative to scalp root (zero static rest offset)
+      const getVerletTipDelta = (chain, restLocalX, restLocalY) => {
+        if (!chain || !chain.nodes || chain.nodes.length < 2 || !chain.tip || !pose.head) {
+          return { dx: 0, dy: 0 };
+        }
+        const root = chain.nodes[0];
+        const tip = chain.tip;
+        const rLen = Math.hypot(restLocalX, restLocalY) || 1;
+        const totalL = chain.totalLength || 0.2;
+        const restX = (restLocalX / rLen) * totalL * ppu;
+        const restY = (restLocalY / rLen) * totalL * ppu;
+        const actX = (tip.x - root.x) * ppu;
+        const actY = -(tip.y - root.y) * ppu;
+        const maxD = headPx * 0.72;
+        return {
+          dx: utils.clamp((actX - restX) * 0.65, -maxD, maxD),
+          dy: utils.clamp((actY - restY) * 0.65, -maxD, maxD),
+        };
+      };
+
+      const dBack = this.hairVerlet
+        ? getVerletTipDelta(this.hairVerlet.back, (-rx * 0.82 + upX * 0.45), (-ry * 0.82 + upY * 0.45))
+        : { dx: 0, dy: 0 };
+      const dTop = this.hairVerlet
+        ? getVerletTipDelta(this.hairVerlet.top, (upX * 0.92 - rx * 0.22), (upY * 0.92 - ry * 0.22))
+        : { dx: 0, dy: 0 };
+      const dBang = this.hairVerlet
+        ? getVerletTipDelta(this.hairVerlet.bang, (rx * 0.84 - upX * 0.42), (ry * 0.84 - upY * 0.42))
+        : { dx: 0, dy: 0 };
+
+      const drawSpike = (baseFwd, baseUp, tipFwd, tipUp, halfW, fillCol, tipAccent = null, zone = 'top') => {
         const bCx = sHeadX + (rx * baseFwd + upX * baseUp) * headPx;
         const bCy = sHeadY + (ry * baseFwd + upY * baseUp) * headPx;
-        const tX = sHeadX + (rx * (tipFwd - windPush * 0.35) + upX * tipUp) * headPx;
-        const tY = sHeadY + (ry * (tipFwd - windPush * 0.35) + upY * tipUp) * headPx;
+        const vd = zone === 'back' ? dBack : zone === 'bang' ? dBang : dTop;
+        const tX = sHeadX + (rx * (tipFwd - windPush * 0.35) + upX * tipUp) * headPx + vd.dx * 0.65;
+        const tY = sHeadY + (ry * (tipFwd - windPush * 0.35) + upY * tipUp) * headPx + vd.dy * 0.65;
+        const e1x = bCx - upX * halfW * headPx * 0.5 + rx * halfW * headPx * 0.65;
+        const e1y = bCy - upY * halfW * headPx * 0.5 + ry * halfW * headPx * 0.65;
+        const e2x = bCx + upX * halfW * headPx * 0.5 - rx * halfW * headPx * 0.65;
+        const e2y = bCy + upY * halfW * headPx * 0.5 - ry * halfW * headPx * 0.65;
+        const c1x = (e1x + tX) * 0.5 - rx * headPx * 0.08;
+        const c1y = (e1y + tY) * 0.5 - upY * headPx * 0.06;
+        const c2x = (e2x + tX) * 0.5 + rx * headPx * 0.06;
+        const c2y = (e2y + tY) * 0.5 - upY * headPx * 0.06;
+
         ctx.fillStyle = fillCol;
         ctx.beginPath();
-        ctx.moveTo(bCx - upX * halfW * headPx * 0.5 + rx * halfW * headPx * 0.65, bCy - upY * halfW * headPx * 0.5 + ry * halfW * headPx * 0.65);
-        ctx.lineTo(tX, tY);
-        ctx.lineTo(bCx + upX * halfW * headPx * 0.5 - rx * halfW * headPx * 0.65, bCy + upY * halfW * headPx * 0.5 - ry * halfW * headPx * 0.65);
+        ctx.moveTo(e1x, e1y);
+        ctx.quadraticCurveTo(c1x, c1y, tX, tY);
+        ctx.quadraticCurveTo(c2x, c2y, e2x, e2y);
         ctx.closePath();
         ctx.fill();
         if (tipAccent) {
@@ -3038,28 +4031,28 @@
       const darkRim = isBlack ? '#64748b' : '#0f172a';
 
       if (spec.id === 'gojo') {
-        // Gojo Satoru layered spiky white crown
-        drawSpike(-0.62, 0.55, -1.38, 0.92, 0.44, spec.hairTipColor || '#94a3b8');
-        drawSpike(-0.25, 0.78, -0.78, 1.56, 0.48, spec.hairColor);
-        drawSpike(0.15, 0.82, -0.18, 1.72, 0.52, spec.hairColor, '#e0f2fe');
-        drawSpike(0.55, 0.66, 0.52, 1.5, 0.44, spec.hairColor);
-        drawSpike(0.78, 0.35, 1.15, 0.88, 0.34, spec.hairTipColor || '#cbd5e1');
+        // Gojo Satoru layered spiky white crown + Verlet responsive tips
+        drawSpike(-0.62, 0.55, -1.42, 0.92, 0.44, spec.hairTipColor || '#94a3b8', null, 'back');
+        drawSpike(-0.25, 0.78, -0.78, 1.56, 0.48, spec.hairColor, null, 'back');
+        drawSpike(0.15, 0.82, -0.18, 1.74, 0.52, spec.hairColor, '#e0f2fe', 'top');
+        drawSpike(0.55, 0.66, 0.52, 1.5, 0.44, spec.hairColor, null, 'top');
+        drawSpike(0.78, 0.35, 1.15, 0.88, 0.34, spec.hairTipColor || '#cbd5e1', null, 'bang');
       } else if (spec.id === 'toji') {
         // Toji Fushiguro sharp dark swept locks + iconic forehead bang
         const fillC = isBlack ? '#1e293b' : '#09090b';
-        drawSpike(-0.68, 0.42, -1.42, 0.65, 0.4, fillC, darkRim);
-        drawSpike(-0.2, 0.78, -0.78, 1.24, 0.48, fillC, darkRim);
-        drawSpike(0.26, 0.76, -0.18, 1.28, 0.46, fillC, darkRim);
-        drawSpike(0.66, 0.52, 1.08, 0.25, 0.3, fillC, '#34d399');
-        drawSpike(0.75, 0.25, 0.96, -0.18, 0.22, fillC, '#34d399');
+        drawSpike(-0.68, 0.42, -1.42, 0.65, 0.4, fillC, darkRim, 'back');
+        drawSpike(-0.2, 0.78, -0.78, 1.24, 0.48, fillC, darkRim, 'back');
+        drawSpike(0.26, 0.76, -0.18, 1.28, 0.46, fillC, darkRim, 'top');
+        drawSpike(0.66, 0.52, 1.08, 0.25, 0.3, fillC, '#34d399', 'bang');
+        drawSpike(0.75, 0.25, 0.96, -0.18, 0.22, fillC, '#34d399', 'bang');
       } else if (spec.id === 'benimaru') {
         // Benimaru Shinmon spiky black warrior hair with crimson flame tips
         const fillC = isBlack ? '#1e1b26' : '#18181b';
-        drawSpike(-0.66, 0.45, -1.48, 0.85, 0.44, fillC, spec.hairTipColor || '#ef4444');
-        drawSpike(-0.22, 0.76, -0.82, 1.48, 0.48, fillC, spec.hairTipColor || '#ef4444');
-        drawSpike(0.2, 0.82, 0.02, 1.58, 0.5, fillC, '#fb7185');
-        drawSpike(0.62, 0.62, 1.05, 1.05, 0.38, fillC, '#fde047');
-        drawSpike(0.78, 0.28, 1.04, 0.08, 0.26, fillC, spec.hairTipColor || '#ef4444');
+        drawSpike(-0.66, 0.45, -1.48, 0.85, 0.44, fillC, spec.hairTipColor || '#ef4444', 'back');
+        drawSpike(-0.22, 0.76, -0.82, 1.48, 0.48, fillC, spec.hairTipColor || '#ef4444', 'back');
+        drawSpike(0.2, 0.82, 0.02, 1.58, 0.5, fillC, '#fb7185', 'top');
+        drawSpike(0.62, 0.62, 1.05, 1.05, 0.38, fillC, '#fde047', 'top');
+        drawSpike(0.78, 0.28, 1.04, 0.08, 0.26, fillC, spec.hairTipColor || '#ef4444', 'bang');
       }
 
       ctx.restore();
@@ -3276,7 +4269,7 @@
       const bHip = pose.backHip || pose.hip;
       const fShoulder = pose.frontShoulder || pose.shoulder;
       const bShoulder = pose.backShoulder || pose.shoulder;
-      const backColor = isGhost ? secondaryColor : isBlack ? '#94a3b8' : '#475569';
+      const backColor = isGhost ? secondaryColor : isBlack ? '#64748b' : '#475569';
 
       let accentColor = isBlack ? (spec.accentBlack || '#38bdf8') : (spec.accentLight || '#2563eb');
       if (pose.auraStyle === 'gold') accentColor = '#fde047';
@@ -3290,14 +4283,23 @@
       const hh = gridRenderer.height * 0.5;
       const cx = camera.x;
       const cy = camera.y;
+      const sHipX = hw + (pose.hip.x - cx) * ppu;
+      const sHipY = hh - (pose.hip.y - cy) * ppu;
+      const sWaistX = pose.waist ? hw + (pose.waist.x - cx) * ppu : (sHipX + hw + (pose.shoulder.x - cx) * ppu) * 0.5;
+      const sWaistY = pose.waist ? hh - (pose.waist.y - cy) * ppu : (sHipY + hh - (pose.shoulder.y - cy) * ppu) * 0.5;
+      const sShX = hw + (pose.shoulder.x - cx) * ppu;
+      const sShY = hh - (pose.shoulder.y - cy) * ppu;
+      const sNkX = hw + (pose.neck.x - cx) * ppu;
+      const sNkY = hh - (pose.neck.y - cy) * ppu;
+      const limbRim = null;
 
       ctx.save();
       ctx.globalAlpha = alpha;
 
       // 1. Warrior / Cursed Energy Aura Halo (zero shadowBlur!)
       if (!isGhost && pose.auraStyle) {
-        const bodyMidX = hw + ((pose.hip.x + pose.shoulder.x) * 0.5 - cx) * ppu;
-        const bodyMidY = hh - ((pose.hip.y + pose.shoulder.y) * 0.5 - cy) * ppu;
+        const bodyMidX = sWaistX;
+        const bodyMidY = sWaistY;
         const softMult = pose.auraSoft ? 0.55 : 1.0;
         let glowSprite;
         if (pose.auraStyle === 'gold') {
@@ -3349,9 +4351,7 @@
         ctx.globalAlpha *= softMult;
         ctx.drawImage(glowSprite, bodyMidX - auraR, bodyMidY - auraR, auraR * 2, auraR * 2);
 
-        // Crisp shimmering energy rim along spine & head
-        const sH = { x: hw + (pose.hip.x - cx) * ppu, y: hh - (pose.hip.y - cy) * ppu };
-        const sS = { x: hw + (pose.shoulder.x - cx) * ppu, y: hh - (pose.shoulder.y - cy) * ppu };
+        // Crisp shimmering energy rim along curved spine & head
         const sHd = { x: hw + (pose.head.x - cx) * ppu, y: hh - (pose.head.y - cy) * ppu };
         const pulseW = torsoWidth * (2.15 + 0.25 * Math.sin(this.idleTime * 9));
         ctx.strokeStyle = accentColor;
@@ -3359,8 +4359,8 @@
         ctx.lineWidth = pulseW;
         ctx.lineCap = 'round';
         ctx.beginPath();
-        ctx.moveTo(sH.x, sH.y);
-        ctx.lineTo(sS.x, sS.y);
+        ctx.moveTo(sHipX, sHipY);
+        ctx.quadraticCurveTo(sWaistX, sWaistY, sShX, sShY);
         ctx.stroke();
         ctx.beginPath();
         ctx.arc(sHd.x, sHd.y, Math.max(4, pose.headRadius * ppu) * 1.32, 0, Math.PI * 2);
@@ -3387,7 +4387,8 @@
         backColor,
         gridRenderer,
         camera,
-        false
+        false,
+        limbRim
       );
       if (!isGhost && !this.dancing && spec.hakamaBlack) {
         const hakBack = isBlack ? '#0f172a' : '#334155';
@@ -3416,7 +4417,8 @@
           backColor,
           gridRenderer,
           camera,
-          true
+          true,
+          limbRim
         );
       }
 
@@ -3430,14 +4432,7 @@
         this._drawHeldWeapon(ctx, pose.backHand, offDefAng, combatW, camera, gridRenderer, isBlack, true);
       }
 
-      // 4. Sculpted Warrior Coat / Gi / Alan Silhouette Torso
-      const sHipX = hw + (pose.hip.x - cx) * ppu;
-      const sHipY = hh - (pose.hip.y - cy) * ppu;
-      const sShX = hw + (pose.shoulder.x - cx) * ppu;
-      const sShY = hh - (pose.shoulder.y - cy) * ppu;
-      const sNkX = hw + (pose.neck.x - cx) * ppu;
-      const sNkY = hh - (pose.neck.y - cy) * ppu;
-
+      // 4. Sculpted Curved-Spine Warrior Coat / Haori / Alan Silhouette Torso
       if (!isGhost && pose.coatStyle !== false) {
         const spDx = sShX - sHipX;
         const spDy = sShY - sHipY;
@@ -3453,66 +4448,99 @@
           ? ppu * 0.132
           : isBenimaru
             ? ppu * 0.105
-            : ppu * 0.088;
+            : isToji
+              ? ppu * 0.095
+              : ppu * 0.09;
+        const waistHalf = (shHalf + ppu * 0.056) * 0.44;
         const hpHalf = pose.frontFacing
           ? ppu * 0.084
           : isToji
             ? ppu * 0.052
             : isBenimaru
               ? ppu * 0.072
-              : ppu * 0.056;
+              : ppu * 0.058;
         const hemExt = isToji ? ppu * 0.025 : isBenimaru ? ppu * 0.085 : ppu * 0.06;
-
         const coatFill = isBlack ? (spec.coatBlack || '#0b101d') : (spec.coatLight || '#0f172a');
+
+        if (!isToji && spec.id !== 'animator') {
+          const edgeCol = isBenimaru ? (spec.trimColor || '#ef4444') : accentColor;
+          this._drawVerletCoatFlaps(ctx, pose, camera, gridRenderer, spec, coatFill, edgeCol, isBlack);
+        }
+
         ctx.fillStyle = coatFill;
-        ctx.strokeStyle = isToji ? (isBlack ? '#64748b' : '#0f172a') : primaryColor;
-        ctx.lineWidth = Math.max(1.5, ppu * 0.024);
+        ctx.strokeStyle = isToji
+          ? (isBlack ? '#475569' : '#0f172a')
+          : isBenimaru
+            ? (spec.trimColor || '#ef4444')
+            : (isBlack ? '#334155' : '#0f172a');
+        ctx.lineWidth = Math.max(1.1, ppu * 0.016);
         ctx.lineJoin = 'round';
         ctx.beginPath();
+        const colTopX = (sShX + sNkX) * 0.5;
+        const colTopY = (sShY + sNkY) * 0.5;
         ctx.moveTo(sShX - px * shHalf, sShY - py * shHalf);
+        ctx.lineTo(colTopX - px * (shHalf * 0.42), colTopY - py * (shHalf * 0.42));
+        ctx.lineTo(colTopX + px * (shHalf * 0.42), colTopY + py * (shHalf * 0.42));
         ctx.lineTo(sShX + px * shHalf, sShY + py * shHalf);
-        ctx.lineTo(sHipX - ux * hemExt + px * (hpHalf * 1.18), sHipY - uy * hemExt + py * (hpHalf * 1.18));
-        ctx.lineTo(sHipX - ux * (hemExt * 0.65), sHipY - uy * (hemExt * 0.65));
-        ctx.lineTo(sHipX - ux * hemExt - px * (hpHalf * 1.18), sHipY - uy * hemExt - py * (hpHalf * 1.18));
+        ctx.quadraticCurveTo(
+          sWaistX + px * waistHalf,
+          sWaistY + py * waistHalf,
+          sHipX - ux * hemExt + px * (hpHalf * 1.15),
+          sHipY - uy * hemExt + py * (hpHalf * 1.15)
+        );
+        ctx.quadraticCurveTo(
+          sHipX - ux * (hemExt * 0.85),
+          sHipY - uy * (hemExt * 0.85),
+          sHipX - ux * hemExt - px * (hpHalf * 1.15),
+          sHipY - uy * hemExt - py * (hpHalf * 1.15)
+        );
+        ctx.quadraticCurveTo(
+          sWaistX - px * waistHalf,
+          sWaistY - py * waistHalf,
+          sShX - px * shHalf,
+          sShY - py * shHalf
+        );
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
 
         if (isToji) {
-          // Toji diagonal cursed-worm inventory sash + belt
-          const f = pose.facing || 1;
-          ctx.strokeStyle = spec.sashColor || '#9333ea';
-          ctx.lineWidth = Math.max(2.6, ppu * 0.045);
-          ctx.lineCap = 'round';
-          ctx.beginPath();
-          ctx.moveTo(sShX - px * f * shHalf * 0.7, sShY - py * f * shHalf * 0.7);
-          ctx.lineTo(sHipX + px * f * hpHalf * 0.9, sHipY + py * f * hpHalf * 0.9);
-          ctx.stroke();
+          // Toji signature purple Inventory Curse worm draped shoulder-to-hip + emerald waist belt
+          this._drawTojiCursedWorm(ctx, pose, sShX, sShY, sHipX, sHipY, shHalf, hpHalf, px, py, ppu);
           ctx.strokeStyle = '#34d399';
-          ctx.lineWidth = Math.max(1.4, ppu * 0.02);
+          ctx.lineWidth = Math.max(1.6, ppu * 0.024);
+          ctx.lineCap = 'round';
           ctx.beginPath();
           ctx.moveTo(sHipX - px * hpHalf, sHipY - py * hpHalf);
           ctx.lineTo(sHipX + px * hpHalf, sHipY + py * hpHalf);
           ctx.stroke();
         } else if (isBenimaru) {
-          // Benimaru glowing crimson haori edge trim + golden-amber obi sash
+          // Benimaru glowing crimson haori collar trim + golden-amber obi sash with fluttering ties
+          const f = pose.facing || 1;
           ctx.strokeStyle = spec.trimColor || '#ef4444';
           ctx.lineWidth = Math.max(1.8, ppu * 0.028);
           ctx.beginPath();
           ctx.moveTo(sShX - px * (shHalf * 0.55), sShY - py * (shHalf * 0.55));
           ctx.lineTo(sNkX, sNkY);
           ctx.lineTo(sShX + px * (shHalf * 0.55), sShY + py * (shHalf * 0.55));
-          ctx.moveTo(sHipX - ux * hemExt + px * hpHalf * 1.15, sHipY - uy * hemExt + py * hpHalf * 1.15);
-          ctx.lineTo(sHipX - ux * hemExt - px * hpHalf * 1.15, sHipY - uy * hemExt - py * hpHalf * 1.15);
+          ctx.moveTo(sHipX - ux * hemExt + px * hpHalf * 1.12, sHipY - uy * hemExt + py * hpHalf * 1.12);
+          ctx.lineTo(sHipX - ux * hemExt - px * hpHalf * 1.12, sHipY - uy * hemExt - py * hpHalf * 1.12);
           ctx.stroke();
+
           ctx.strokeStyle = spec.sashColor || '#f59e0b';
-          ctx.lineWidth = Math.max(2.2, ppu * 0.036);
+          ctx.lineWidth = Math.max(2.3, ppu * 0.036);
+          ctx.lineCap = 'round';
           ctx.beginPath();
           ctx.moveTo(sHipX - px * hpHalf, sHipY - py * hpHalf);
           ctx.lineTo(sHipX + px * hpHalf, sHipY + py * hpHalf);
+          ctx.moveTo(sHipX - px * f * hpHalf * 0.6, sHipY - py * f * hpHalf * 0.6);
+          ctx.lineTo(
+            sHipX - px * f * (hpHalf * 1.25) - f * ppu * 0.05,
+            sHipY + ppu * 0.14 + Math.sin(this.idleTime * 8) * 1.6
+          );
           ctx.stroke();
         } else {
-          // Gojo high Jujutsu collar & luminous trim
+          // Gojo high Jujutsu collar, luminous button & central zip seam
           ctx.strokeStyle = accentColor;
           ctx.lineWidth = Math.max(1.3, ppu * 0.022);
           ctx.beginPath();
@@ -3524,6 +4552,12 @@
             ctx.lineTo(sHipX, sHipY);
           }
           ctx.stroke();
+          if (ppu >= 25) {
+            ctx.fillStyle = accentColor;
+            ctx.beginPath();
+            ctx.arc((sShX + sNkX) * 0.5, (sShY + sNkY) * 0.5, Math.max(1.2, ppu * 0.018), 0, Math.PI * 2);
+            ctx.fill();
+          }
         }
 
         // Neck stem
@@ -3535,14 +4569,24 @@
         ctx.lineTo(sNkX, sNkY);
         ctx.stroke();
       } else {
-        ctx.strokeStyle = primaryColor;
-        ctx.lineWidth = torsoWidth;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(sHipX, sHipY);
-        ctx.lineTo(sShX, sShY);
-        ctx.lineTo(sNkX, sNkY);
-        ctx.stroke();
+        // Alan Becker sculpted athletic stick-fighter silhouette (tapered chest + curved waist spine)
+        ctx.fillStyle = primaryColor;
+        this._drawTaperedSegment(ctx, sHipX, sHipY, sWaistX, sWaistY, torsoWidth * 0.44, torsoWidth * 0.48);
+        this._drawTaperedSegment(ctx, sWaistX, sWaistY, sShX, sShY, torsoWidth * 0.48, torsoWidth * 0.62, torsoWidth * 0.56);
+        this._drawTaperedSegment(ctx, sShX, sShY, sNkX, sNkY, torsoWidth * 0.4, torsoWidth * 0.32);
+
+        if (!isGhost && spec.id === 'animator' && pose.auraStyle && ppu >= 22 && pose.frontHand && pose.backHand) {
+          // Subtle glowing animator energy cuffs at wrists
+          const shF = gridRenderer.worldToScreen(pose.frontHand.x, pose.frontHand.y, camera);
+          const shB = gridRenderer.worldToScreen(pose.backHand.x, pose.backHand.y, camera);
+          ctx.strokeStyle = accentColor;
+          ctx.lineWidth = Math.max(1.4, limbWidth * 0.42);
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.arc(shF.x, shF.y, Math.max(1.8, limbWidth * 0.46), 0, Math.PI * 2);
+          ctx.arc(shB.x, shB.y, Math.max(1.6, limbWidth * 0.42), 0, Math.PI * 2);
+          ctx.stroke();
+        }
       }
 
       // 5. Foreground Limbs & Style Hakama
@@ -3573,7 +4617,8 @@
           primaryColor,
           gridRenderer,
           camera,
-          true
+          true,
+          limbRim
         );
       }
       this._drawLimb(
@@ -3586,7 +4631,8 @@
         primaryColor,
         gridRenderer,
         camera,
-        false
+        false,
+        limbRim
       );
 
       // Thrown Vector Spear or Held Combat Sword in frontHand
@@ -3609,29 +4655,38 @@
         this._drawParryShield(ctx, pose, camera, gridRenderer);
       }
 
-      // 6. Sculpted Head, Hair Spikes & Signature Style Eyes
+      // 6. Sculpted Head (with volume-preserving Squash & Stretch), Verlet Hair Spikes & Signature Style Eyes
       const sHeadX = hw + (pose.head.x - cx) * ppu;
       const sHeadY = hh - (pose.head.y - cy) * ppu;
       const headPx = Math.max(4, pose.headRadius * ppu);
+      const headSX = pose.headStretchX || 1;
+      const headSY = pose.headStretchY || 1;
+      const headRx = Math.max(2, headPx * headSX);
+      const headRy = Math.max(2, headPx * headSY);
+      const headTiltAng = Math.atan2(sHeadY - sNkY, sHeadX - sNkX) + Math.PI * 0.5;
 
       ctx.fillStyle = primaryColor;
       ctx.beginPath();
-      ctx.arc(sHeadX, sHeadY, headPx, 0, Math.PI * 2);
+      ctx.ellipse(sHeadX, sHeadY, headRx, headRy, headTiltAng, 0, Math.PI * 2);
       ctx.fill();
 
       if (!isGhost && (pose.auraStyle || isBlack)) {
         ctx.strokeStyle = pose.auraStyle ? accentColor : 'rgba(56, 189, 248, 0.35)';
         ctx.lineWidth = Math.max(1.1, headPx * 0.11);
         ctx.beginPath();
-        ctx.arc(sHeadX, sHeadY, headPx, 0, Math.PI * 2);
+        ctx.ellipse(sHeadX, sHeadY, headRx, headRy, headTiltAng, 0, Math.PI * 2);
         ctx.stroke();
       }
 
       if (!isGhost && headPx >= 4.5) {
-        this._drawHairSpikes(ctx, sHeadX, sHeadY, sNkX, sNkY, headPx, pose, spec, primaryColor, accentColor, isBlack);
+        this._drawHairSpikes(ctx, sHeadX, sHeadY, sNkX, sNkY, headPx, pose, spec, primaryColor, accentColor, isBlack, ppu);
       }
 
       const activeEyeColor = pose.eyeColorOverride || eyeColor;
+      const intenseExpr =
+        this.dashTimer > 0 ||
+        Boolean(this.throwState && this.throwState.active) ||
+        Boolean(this.combat && this.combat.active && this.combat.attackState && this.combat.attackState.active);
       if (headPx >= 6 && activeEyeColor) {
         const styleId = pose.styleId || spec.id;
         const useGlowEye = Boolean(pose.eyeColorOverride) && (this.dancing || styleId !== 'animator');
@@ -3687,14 +4742,24 @@
             ctx.beginPath();
             ctx.arc(ex, ey, eyeR * 0.72, 0, Math.PI * 2);
             ctx.fill();
+            if (intenseExpr && headPx >= 9) {
+              // Sharp anime determination brow slant
+              ctx.strokeStyle = isEmerald ? '#059669' : '#0284c7';
+              ctx.lineWidth = Math.max(1.2, eyeR * 0.45);
+              ctx.lineCap = 'round';
+              ctx.beginPath();
+              ctx.moveTo(ex - pose.facing * eyeR * 0.95, ey - eyeR * 1.15);
+              ctx.lineTo(ex + pose.facing * eyeR * 0.95, ey - eyeR * 0.65);
+              ctx.stroke();
+            }
           } else {
             ctx.fillStyle = activeEyeColor;
             ctx.beginPath();
-            ctx.ellipse(ex, ey, eyeR * 1.15, eyeR * 0.85, 0, 0, Math.PI * 2);
+            ctx.ellipse(ex, ey, eyeR * 1.18, eyeR * (intenseExpr ? 0.74 : 0.88), pose.facing * (intenseExpr ? 0.18 : 0), 0, Math.PI * 2);
             ctx.fill();
             ctx.fillStyle = accentColor;
             ctx.beginPath();
-            ctx.arc(ex + pose.facing * eyeR * 0.2, ey - eyeR * 0.15, Math.max(0.9, eyeR * 0.36), 0, Math.PI * 2);
+            ctx.arc(ex + pose.facing * eyeR * 0.2, ey - eyeR * 0.15, Math.max(0.9, eyeR * 0.38), 0, Math.PI * 2);
             ctx.fill();
           }
         };
@@ -3995,19 +5060,24 @@
         this._renderHonoredAura(ctx, this.danceFx, camera, gridRenderer, theme);
       }
 
+      const isBlack = !theme || theme.bg === '#000000';
       for (const ghost of this.particles.ghosts) {
-        const alpha = (ghost.life / ghost.maxLife) * 0.45;
+        const alpha = (ghost.life / Math.max(0.01, ghost.maxLife)) * 0.48;
+        const gCol = ghost.color || theme.dashGhost;
+        ctx.save();
+        if (ghost.color && isBlack) ctx.globalCompositeOperation = 'lighter';
         this.renderPose(
           ctx,
           ghost.pose,
           camera,
           gridRenderer,
-          theme.dashGhost,
-          theme.dashGhost,
+          gCol,
+          gCol,
           null,
           alpha,
           theme
         );
+        ctx.restore();
       }
 
       const pose = this.lastPose || this.computePose();
@@ -4029,8 +5099,9 @@
         theme
       );
 
+      this._renderWeaponSmearTrails(ctx, camera, gridRenderer, theme);
+
       if (this.dancing && this.danceFx && this.danceFx.mode === 'purple') {
-        const isBlack = theme && theme.bg === '#000000';
         ctx.save();
         if (isBlack) ctx.globalCompositeOperation = 'lighter';
         this._renderPurpleEffects(ctx, this.danceFx, camera, gridRenderer);

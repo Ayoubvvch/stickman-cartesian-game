@@ -5,14 +5,19 @@
   const { CONFIG, utils } = MathStickGame;
 
   class Stickman {
-    constructor(particles, functionPlotter = null) {
+    constructor(particles, functionPlotter = null, vectorSystem = null) {
       this.particles = particles;
       this.functionPlotter = functionPlotter;
+      this.vectorSystem = vectorSystem;
       this._glowSprites = new Map();
       this._scarfPtsX = new Float64Array(8);
       this._scarfPtsY = new Float64Array(8);
       this._honoredQuoteW = 0;
       this.reset();
+    }
+
+    setVectorSystem(vectorSystem) {
+      this.vectorSystem = vectorSystem || null;
     }
 
     _resetScarf(nx, ny) {
@@ -84,9 +89,13 @@
       this.danceBlend = 0;
       this.surfBlend = 0;
       this.surfingCurve = false;
+      this.ridingVector = null;
+      this.vectorParam = 0.5;
       this.curveSlopeAngle = 0;
       this.curveSpeed = 0;
       this.dropThroughTimer = 0;
+      this.groundPassThroughTimer = 0;
+      this.damageFlashTimer = 0;
       this.leanAngle = 0.04;
       this.currentVisualHeight = CONFIG.HEIGHT_STANDING;
       this.lastPose = null;
@@ -97,8 +106,55 @@
       this.reset();
       this.x = x;
       this.y = y;
-      this.grounded = y <= 0.02;
+      this.grounded = Math.abs(y) <= 0.02;
       this._resetScarf(x, y + 1.48);
+    }
+
+    mountVector(vector, s = 0.5) {
+      if (!vector) return;
+      this.ridingVector = vector;
+      this.vectorParam = utils.clamp(s, 0.06, 0.94);
+      this.surfingCurve = false;
+      this.climbing = false;
+      this.dancing = false;
+      this.danceFx = null;
+      this.sliding = false;
+      this.crouching = false;
+      this.freeFallMode = false;
+      this.freeFallDive = false;
+      this.freeFallBrake = false;
+      this.grounded = true;
+      this.airTime = 0;
+      this.coyoteTimer = CONFIG.COYOTE_TIME;
+      this.jumpsRemaining = 2;
+      this.x = vector.ax + vector.ux * this.vectorParam;
+      this.y = vector.ay + vector.uy * this.vectorParam;
+      this.vx = vector.vx;
+      this.vy = vector.vy;
+      this.curveSpeed = Math.hypot(vector.vx, vector.vy);
+      if (Math.abs(vector.vx) > 0.1) this.facing = Math.sign(vector.vx);
+      const slopeAng = vector.ux >= 0
+        ? Math.atan2(vector.uy, Math.max(1e-4, vector.ux))
+        : Math.atan2(-vector.uy, Math.max(1e-4, -vector.ux));
+      this.curveSlopeAngle = utils.clamp(slopeAng, -1.1, 1.1);
+      if (this.vectorSystem) {
+        this.vectorSystem.onMount(vector);
+      }
+    }
+
+    dismountVector(keepVelocity = true) {
+      if (!this.ridingVector) return;
+      const v = this.ridingVector;
+      if (keepVelocity) {
+        this.vx = v.vx;
+        this.vy = v.vy;
+      }
+      this.ridingVector = null;
+      this.grounded = false;
+      this.coyoteTimer = CONFIG.COYOTE_TIME;
+      if (this.vectorSystem) {
+        this.vectorSystem.onDismount(v);
+      }
     }
 
     isFreeFalling() {
@@ -106,6 +162,7 @@
         !this.grounded &&
         !this.climbing &&
         !this.surfingCurve &&
+        !this.ridingVector &&
         this.dashTimer <= 0 &&
         (this.freeFallMode || this.vy < -7.5 || (this.y > 3.5 && this.vy < -2.0))
       );
@@ -113,6 +170,7 @@
 
     getStateLabel() {
       if (this.dashTimer > 0) return 'Dash';
+      if (this.ridingVector) return 'Vector Ride';
       if (this.surfingCurve) return 'Curve Surf';
       if (this.climbing) return 'Climbing';
       if (this.flipTimer > 0) return 'Flip';
@@ -149,6 +207,8 @@
       this.dashCooldown = Math.max(0, this.dashCooldown - dt);
       this.climbCooldown = Math.max(0, this.climbCooldown - dt);
       this.dropThroughTimer = Math.max(0, this.dropThroughTimer - dt);
+      this.groundPassThroughTimer = Math.max(0, this.groundPassThroughTimer - dt);
+      this.damageFlashTimer = Math.max(0, this.damageFlashTimer - dt);
       this.heavyLandTimer = Math.max(0, this.heavyLandTimer - dt);
       this.landSquash = Math.max(0, this.landSquash - dt * 4.2);
 
@@ -158,6 +218,7 @@
 
       // Free Fall drop trigger (G key or toolbar button)
       if (input.freeFallPressed) {
+        if (this.ridingVector) this.dismountVector(false);
         this.y = Math.max(CONFIG.FREE_FALL_DROP_HEIGHT, this.y + 20);
         this.vy = 0;
         this.vx *= 0.25;
@@ -180,7 +241,8 @@
 
       // Dance toggle & style switching
       if (input.danceStyleIndex !== null) {
-        if (this.grounded || this.dancing || this.climbing || this.surfingCurve) {
+        if (this.grounded || this.dancing || this.climbing || this.surfingCurve || this.ridingVector) {
+          if (this.ridingVector) this.dismountVector(false);
           this.climbing = false;
           this.surfingCurve = false;
           this.vy = 0;
@@ -199,6 +261,7 @@
       } else if (
         (input.dancePressed || (input.gamepadYPressed && (this.grounded || this.dancing))) &&
         !this.climbing &&
+        !this.ridingVector &&
         this.dashTimer <= 0
       ) {
         if (this.dancing) {
@@ -243,11 +306,23 @@
         }
       }
 
+      // Active Launched Vector Riding Branch
+      if (this.ridingVector) {
+        const stillRiding = this._updateVectorRide(dt, input);
+        if (stillRiding) {
+          this._updateAnimationState(dt);
+          this.lastPose = this.computePose();
+          this._updateScarf(dt, this.lastPose);
+          return;
+        }
+      }
+
       // Climbing grab detection on y-axis (x = 0)
       const nearYAxis = Math.abs(this.x) <= CONFIG.CLIMB_GRAB_RADIUS;
       if (
         !this.climbing &&
         !this.surfingCurve &&
+        !this.ridingVector &&
         this.dashTimer <= 0 &&
         nearYAxis &&
         this.climbCooldown <= 0
@@ -431,9 +506,32 @@
         this.vx = utils.moveToward(this.vx, 0, decel * dt);
       }
 
-      // Jump & Double Jump
+      // Jump, X-axis Drop-Through & Double Jump
       if (this.jumpBufferTimer > 0 && this.dashTimer <= 0) {
-        if (this.coyoteTimer > 0) {
+        const belowCurve =
+          this.grounded &&
+          Math.abs(this.y) <= 0.02 &&
+          (input.crouchHeld || input.climbDownHeld) &&
+          this.functionPlotter &&
+          this.functionPlotter.isActive()
+            ? this.functionPlotter.sample(this.x)
+            : null;
+        if (
+          belowCurve &&
+          belowCurve.valid &&
+          belowCurve.y < -0.02 &&
+          Math.abs(belowCurve.dy) <= CONFIG.SURF_MAX_SLOPE
+        ) {
+          this.groundPassThroughTimer = 0.26;
+          this.grounded = false;
+          this.coyoteTimer = 0;
+          this.jumpBufferTimer = 0;
+          this.sliding = false;
+          this.crouching = false;
+          this.freeFallMode = false;
+          this.vy = -2.2;
+          this.jumpsRemaining = 1;
+        } else if (this.coyoteTimer > 0) {
           this.vy = CONFIG.JUMP_VEL;
           this.grounded = false;
           this.coyoteTimer = 0;
@@ -496,52 +594,83 @@
       this.x += this.vx * dt;
       this.y += this.vy * dt;
 
-      // Landing or walking onto active math function curve y = f(x)
-      let snappedToCurve = false;
+      // Catch & board a launched mathematical vector if chasing/landing onto its shaft
       if (
-        this.functionPlotter &&
-        this.functionPlotter.isActive() &&
+        this.vectorSystem &&
+        !this.ridingVector &&
+        this.dropThroughTimer <= 0 &&
+        !this.dancing &&
+        this.dashTimer <= 0
+      ) {
+        const hitVec = this.vectorSystem.findMountableVector(this);
+        if (hitVec) {
+          this.mountVector(hitVec.vector, hitVec.s);
+          this._updateAnimationState(dt);
+          this.lastPose = this.computePose();
+          this._updateScarf(dt, this.lastPose);
+          return;
+        }
+      }
+
+      // Landing or walking onto active math function curve y = f(x) (including y < 0)
+      let snappedToCurve = false;
+      const nextCurve =
+        this.functionPlotter && this.functionPlotter.isActive()
+          ? this.functionPlotter.sample(this.x)
+          : null;
+      if (
+        nextCurve &&
         this.dropThroughTimer <= 0 &&
         !this.dancing &&
         this.dashTimer <= 0
       ) {
         const prevCurve = this.functionPlotter.sample(prevX);
-        const nextCurve = this.functionPlotter.sample(this.x);
         if (
           nextCurve.valid &&
-          nextCurve.y >= 0 &&
           Math.abs(nextCurve.dy) <= CONFIG.SURF_MAX_SLOPE
         ) {
-          const prevRef = prevCurve.valid ? prevCurve.y - 0.24 : 0;
+          const prevRef = (prevCurve.valid ? prevCurve.y : nextCurve.y) - 0.24;
           const airLand =
             !this.grounded &&
             this.vy <= 0.7 &&
             prevY >= prevRef &&
             this.y <= nextCurve.y + 0.14;
-          const groundWalkOn =
+          const groundWalkUp =
             this.grounded &&
             Math.abs(this.vx) > 0.18 &&
             nextCurve.y >= 0.008 &&
             nextCurve.y <= 0.48 &&
             (!prevCurve.valid || prevCurve.y <= 0.28);
+          const groundCrouchDip =
+            this.grounded &&
+            input.crouchHeld &&
+            Math.abs(this.vx) > 0.18 &&
+            nextCurve.y <= -0.008 &&
+            nextCurve.y >= -0.48 &&
+            (!prevCurve.valid || prevCurve.y >= -0.28);
 
-          if (airLand || groundWalkOn) {
+          if (airLand || groundWalkUp || groundCrouchDip) {
             this._snapToCurve(nextCurve, airLand);
             snappedToCurve = true;
           }
         }
       }
 
-      // Ground collision (x-axis at y = 0)
+      // Ground collision (x-axis at y = 0, one-way when dropping or moving below y = 0)
       if (!snappedToCurve) {
-        if (this.y <= 0) {
+        const hitXAxis =
+          this.y <= 0 &&
+          this.groundPassThroughTimer <= 0 &&
+          prevY >= -0.04;
+
+        if (hitXAxis) {
           if (!this.grounded && this.vy < -2.2) {
             const intensity = utils.clamp(Math.abs(this.vy) / 14, 0.2, 2.2);
             this.landSquash = Math.min(1.0, intensity);
             if (this.vy < -11.0) {
               this.heavyLandTimer = 0.24;
             }
-            this.particles.spawnLandingBurst(this.x, intensity);
+            this.particles.spawnLandingBurst(this.x, intensity, 0.02);
           }
           this.y = 0;
           this.vy = 0;
@@ -557,6 +686,22 @@
           this.airTime += dt;
           if (this.y > 3.5 && this.vy < -2.0) {
             this.freeFallMode = true;
+          }
+          // Soft recovery if falling below Quadrants III/IV with no curve underneath
+          if (
+            this.y < -10 &&
+            (!nextCurve || !nextCurve.valid || this.y < nextCurve.y - 6)
+          ) {
+            this.y = 0;
+            this.vy = 0;
+            this.grounded = true;
+            this.freeFallMode = false;
+            this.freeFallDive = false;
+            this.freeFallBrake = false;
+            this.airTime = 0;
+            this.coyoteTimer = CONFIG.COYOTE_TIME;
+            this.jumpsRemaining = 2;
+            this.particles.spawnLandingBurst(this.x, 0.85, 0.02);
           }
         }
       }
@@ -674,7 +819,7 @@
         if (this.vy < -11.0) {
           this.heavyLandTimer = 0.24;
         }
-        this.particles.spawnLandingBurst(this.x, intensity);
+        this.particles.spawnLandingBurst(this.x, intensity, curve.y);
       }
 
       const cosT = Math.cos(curve.angle);
@@ -685,7 +830,7 @@
       if (Math.abs(this.curveSpeed) < 0.08) {
         this.curveSpeed = this.vx;
       }
-      this.y = Math.max(0, curve.y);
+      this.y = curve.y;
       this.vx = this.curveSpeed * cosT;
       this.vy = this.curveSpeed * sinT;
       this.grounded = true;
@@ -708,7 +853,7 @@
           this.coyoteTimer = 0;
           this.jumpBufferTimer = 0;
           this.jumpsRemaining = 1;
-          return false;
+          return 'handled';
         }
 
         this.surfingCurve = false;
@@ -723,7 +868,7 @@
         );
         this.jumpsRemaining = 1;
         this.particles.spawnJumpBurst(this.x, this.y, false);
-        return false;
+        return 'handled';
       }
 
       if (input.dashPressed && this.dashCooldown <= 0) {
@@ -738,7 +883,7 @@
         this.vy = 0;
         this.ghostTimer = 0;
         this.particles.spawnJumpBurst(this.x, this.y, false);
-        return false;
+        return 'handled';
       }
 
       const wantFlip = input.flipPressed || input.gamepadYPressed;
@@ -753,7 +898,7 @@
         this.flipTimer = 0.5;
         this.flipDir = Math.abs(input.moveX) > 0.15 ? Math.sign(input.moveX) : -this.facing;
         this.particles.spawnJumpBurst(this.x, this.y, true);
-        return false;
+        return 'handled';
       }
 
       const sampleNow = this.functionPlotter ? this.functionPlotter.sample(this.x) : null;
@@ -779,9 +924,9 @@
         const dir = Math.sign(input.moveX);
         this.facing = dir;
         const maxDrive =
-          (input.sprintHeld ? CONFIG.SURF_RUN_MAX_SPEED : CONFIG.SURF_WALK_MAX_SPEED) *
+          (input.sprint ? CONFIG.SURF_RUN_MAX_SPEED : CONFIG.SURF_WALK_MAX_SPEED) *
           (carving ? 1.25 : 1.0);
-        const driveAccel = CONFIG.SURF_DRIVE_ACCEL * (input.sprintHeld ? 1.22 : 1.0);
+        const driveAccel = CONFIG.SURF_DRIVE_ACCEL * (input.sprint ? 1.22 : 1.0);
         const reversing = this.curveSpeed !== 0 && Math.sign(this.curveSpeed) !== dir;
         if (reversing || Math.abs(this.curveSpeed) < maxDrive) {
           this.curveSpeed += dir * driveAccel * (reversing ? 1.35 : 1.0) * dt;
@@ -807,7 +952,14 @@
       const nx = this.x + vxStep * dt;
       const next = this.functionPlotter.sample(nx);
 
-      if (next.valid && next.y <= 0.0) {
+      const isFlatAxisCurve =
+        next.valid &&
+        Math.abs(next.y) <= 1e-5 &&
+        Math.abs(next.dy) < 1e-4 &&
+        Math.abs(next.d2y) < 1e-4 &&
+        Math.abs(this.functionPlotter.evaluateY(nx + 0.5)) < 1e-5 &&
+        Math.abs(this.functionPlotter.evaluateY(nx - 0.5)) < 1e-5;
+      if (isFlatAxisCurve) {
         this.x = nx;
         this.y = 0;
         this.vx = vxStep;
@@ -820,7 +972,6 @@
 
       if (!next.valid || Math.abs(next.dy) > CONFIG.SURF_MAX_SLOPE) {
         this.x = nx;
-        this.y = Math.max(0, this.y);
         this.vx = vxStep;
         this.vy = this.curveSpeed * sinT;
         this.surfingCurve = false;
@@ -844,7 +995,7 @@
       }
 
       this.x = nx;
-      this.y = Math.max(0, next.y);
+      this.y = next.y;
       this.curveSlopeAngle = next.angle;
       this.vx = this.curveSpeed * Math.cos(next.angle);
       this.vy = this.curveSpeed * Math.sin(next.angle);
@@ -876,6 +1027,105 @@
       return true;
     }
 
+    _updateVectorRide(dt, input) {
+      const v = this.ridingVector;
+      if (!v) return false;
+
+      if (input.jumpPressed) {
+        const walkDir = Math.abs(input.moveX) > 0.1 ? Math.sign(input.moveX) : 0;
+        if (input.crouchHeld || input.climbDownHeld) {
+          this.dropThroughTimer = 0.25;
+          this.dismountVector(true);
+          this.vy = v.vy - 2.4;
+          this.jumpBufferTimer = 0;
+          this.jumpsRemaining = 1;
+          return 'handled';
+        }
+        // Jump with Galilean vector velocity composition: V_vec + jump impulse
+        this.dismountVector(false);
+        this.vx = v.vx + walkDir * (input.sprint ? 3.4 : 2.1);
+        this.vy = Math.max(CONFIG.JUMP_VEL, v.vy + CONFIG.JUMP_VEL * 0.72);
+        this.grounded = false;
+        this.coyoteTimer = 0;
+        this.jumpBufferTimer = 0;
+        this.crouching = false;
+        this.jumpsRemaining = 1;
+        this.particles.spawnJumpBurst(this.x, this.y, false);
+        return 'handled';
+      }
+
+      if (input.dashPressed && this.dashCooldown <= 0) {
+        const dir = Math.abs(input.moveX) > 0.1 ? Math.sign(input.moveX) : this.facing;
+        this.dismountVector(false);
+        this.facing = dir;
+        this.dashDir = dir;
+        this.dashTimer = CONFIG.DASH_DURATION;
+        this.dashCooldown = CONFIG.DASH_COOLDOWN;
+        this.crouching = false;
+        this.vx = dir * CONFIG.DASH_SPEED;
+        this.vy = 0;
+        this.ghostTimer = 0;
+        this.particles.spawnJumpBurst(this.x, this.y, false);
+        return 'handled';
+      }
+
+      const wantFlip = input.flipPressed || input.gamepadYPressed;
+      if (wantFlip && this.flipTimer <= 0) {
+        this.dismountVector(false);
+        this.vx = v.vx;
+        this.vy = Math.max(6.8, v.vy + 6.2);
+        this.flipDuration = 0.5;
+        this.flipTimer = 0.5;
+        this.flipDir = Math.abs(input.moveX) > 0.15 ? Math.sign(input.moveX) : -this.facing;
+        this.particles.spawnJumpBurst(this.x, this.y, true);
+        return 'handled';
+      }
+
+      // Walk/sprint along vector shaft: V_total = V_vector + V_player_rel
+      let relVx = 0;
+      let relVy = 0;
+      const len = Math.max(0.5, v.norm || Math.hypot(v.ux, v.uy));
+      if (Math.abs(input.moveX) > 0.05) {
+        const moveSignX = Math.sign(input.moveX);
+        this.facing = moveSignX;
+        const alignSign = Math.abs(v.ux) >= 0.22 ? moveSignX * Math.sign(v.ux) : moveSignX;
+        const walkSpd = CONFIG.VEC_SHAFT_WALK_SPEED * (input.sprint ? 1.55 : 1.0);
+        const ds = (alignSign * walkSpd * dt) / len;
+        this.vectorParam = utils.clamp(this.vectorParam + ds, 0.05, 0.95);
+        relVx = (alignSign * walkSpd * v.ux) / len;
+        relVy = (alignSign * walkSpd * v.uy) / len;
+      }
+
+      this.x = v.ax + v.ux * this.vectorParam;
+      this.y = v.ay + v.uy * this.vectorParam;
+      this.vx = v.vx + relVx;
+      this.vy = v.vy + relVy;
+      const slopeAng = v.ux >= 0
+        ? Math.atan2(v.uy, Math.max(1e-4, v.ux))
+        : Math.atan2(-v.uy, Math.max(1e-4, -v.ux));
+      this.curveSlopeAngle = utils.clamp(slopeAng, -1.1, 1.1);
+      this.curveSpeed = Math.hypot(this.vx, this.vy);
+      this.crouching = input.crouchHeld;
+      this.grounded = true;
+      this.freeFallMode = false;
+      this.coyoteTimer = CONFIG.COYOTE_TIME;
+      this.jumpsRemaining = 2;
+
+      if (Math.random() < dt * 9) {
+        this.particles.spawnSpark(
+          this.x - (v.vx * 0.03),
+          this.y + 0.02,
+          -v.vx * 0.25 + (Math.random() - 0.5) * 0.7,
+          0.2 + Math.random() * 0.6,
+          '#34d399',
+          0.025,
+          0.24
+        );
+      }
+
+      return true;
+    }
+
     _updateAnimationState(dt) {
       const speed = Math.abs(this.vx);
       const runBlend = utils.clamp(
@@ -892,6 +1142,7 @@
         !this.sliding &&
         !this.dancing &&
         !this.surfingCurve &&
+        !this.ridingVector &&
         this.dashTimer <= 0 &&
         speed > 0.04
       ) {
@@ -907,13 +1158,18 @@
 
       this.airBlend = utils.damp(
         this.airBlend,
-        !this.grounded && !this.climbing ? 1 : 0,
+        !this.grounded && !this.climbing && !this.ridingVector ? 1 : 0,
         18,
         dt
       );
       this.crouchBlend = utils.damp(
         this.crouchBlend,
-        (this.crouching || this.heavyLandTimer > 0) && this.grounded && !this.surfingCurve ? 1 : 0,
+        (this.crouching || this.heavyLandTimer > 0) &&
+          this.grounded &&
+          !this.surfingCurve &&
+          !this.ridingVector
+          ? 1
+          : 0,
         16,
         dt
       );
@@ -933,14 +1189,14 @@
       );
       this.surfBlend = utils.damp(
         this.surfBlend,
-        this.surfingCurve ? 1 : 0,
+        this.surfingCurve || this.ridingVector ? 1 : 0,
         18,
         dt
       );
 
       let targetLean = 0.04;
       if (this.dashTimer > 0) targetLean = 0.56;
-      else if (this.surfingCurve) targetLean = 0.36;
+      else if (this.surfingCurve || this.ridingVector) targetLean = 0.36;
       else if (this.climbing) targetLean = 0.14;
       else if (this.sliding) targetLean = -0.58;
       else if ((this.crouching || this.heavyLandTimer > 0) && this.grounded) targetLean = 0.42;
@@ -1809,7 +2065,7 @@
     }
 
     computePose() {
-      if (this.surfingCurve) {
+      if (this.surfingCurve || this.ridingVector) {
         return this._computeSurfPose();
       }
       if (this.climbing) {
@@ -2777,18 +3033,20 @@
     }
 
     render(ctx, camera, gridRenderer, theme) {
-      const shadowScale = utils.clamp(1 - this.y / 6.0, 0.2, 1);
-      const sShadow = gridRenderer.worldToScreen(this.x, 0, camera);
-      const rx = Math.max(6, camera.ppu * 0.34 * shadowScale);
-      const ry = Math.max(2, camera.ppu * 0.065 * shadowScale);
+      if (this.y >= -0.05) {
+        const shadowScale = utils.clamp(1 - this.y / 6.0, 0.2, 1);
+        const sShadow = gridRenderer.worldToScreen(this.x, 0, camera);
+        const rx = Math.max(6, camera.ppu * 0.34 * shadowScale);
+        const ry = Math.max(2, camera.ppu * 0.065 * shadowScale);
 
-      ctx.save();
-      ctx.globalAlpha = shadowScale;
-      ctx.fillStyle = theme.shadow;
-      ctx.beginPath();
-      ctx.ellipse(sShadow.x, sShadow.y, rx, ry, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
+        ctx.save();
+        ctx.globalAlpha = shadowScale;
+        ctx.fillStyle = theme.shadow;
+        ctx.beginPath();
+        ctx.ellipse(sShadow.x, sShadow.y, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
 
       if (this.dancing && this.danceFx && this.danceFx.mode === 'honored') {
         this._renderHonoredAura(ctx, this.danceFx, camera, gridRenderer, theme);
@@ -2815,13 +3073,14 @@
         this._renderSurfBoard(ctx, camera, gridRenderer, theme);
       }
 
+      const hurtFlash = this.damageFlashTimer > 0 && Math.floor(this.damageFlashTimer * 24) % 2 === 0;
       this.renderPose(
         ctx,
         pose,
         camera,
         gridRenderer,
-        theme.stickPrimary,
-        theme.stickSecondary,
+        hurtFlash ? '#ff4d6d' : theme.stickPrimary,
+        hurtFlash ? '#fb7185' : theme.stickSecondary,
         theme.stickEye,
         1,
         theme

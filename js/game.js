@@ -13,6 +13,8 @@
     ChallengeManager,
     WebGL2EffectsRenderer,
     MathAudioSynth,
+    VectorSystem,
+    MathCombatArena,
     Stickman,
   } = MathStickGame;
 
@@ -29,8 +31,10 @@
     const glfx = new WebGL2EffectsRenderer(glCanvas);
     const audioFx = new MathAudioSynth();
     const functions = new FunctionPlotter();
-    const stickman = new Stickman(particles, functions);
+    const vectorSystem = new VectorSystem(particles);
+    const stickman = new Stickman(particles, functions, vectorSystem);
     const challenges = new ChallengeManager(functions, stickman, particles);
+    const combat = new MathCombatArena(stickman, particles, vectorSystem, audioFx);
 
     const state = {
       themeName: 'black',
@@ -39,6 +43,9 @@
       showVelocity: false,
       showHelp: true,
       showFuncPanel: false,
+      showVectorPanel: false,
+      vecAimMode: true,
+      vecPanelEdited: false,
       showTouchPad: false,
       camera: {
         x: 0,
@@ -49,6 +56,14 @@
       dragging: false,
       dragLastX: 0,
       dragLastY: 0,
+    };
+
+    const pointer = {
+      screenX: null,
+      screenY: null,
+      worldX: 0,
+      worldY: 0,
+      overCanvas: false,
     };
 
     // DOM Elements
@@ -78,12 +93,14 @@
     const btnFollow = document.getElementById('btnFollow');
     const btnProjections = document.getElementById('btnProjections');
     const btnVelocity = document.getElementById('btnVelocity');
+    const btnVectors = document.getElementById('btnVectors');
     const btnFreeFall = document.getElementById('btnFreeFall');
     const btnDance = document.getElementById('btnDance');
     const btnAudio = document.getElementById('btnAudio');
     const btnFunc = document.getElementById('btnFunc');
     const funcActiveDot = document.getElementById('funcActiveDot');
     const btnTrials = document.getElementById('btnTrials');
+    const btnArena = document.getElementById('btnArena');
     const btnDerivOverlay = document.getElementById('btnDerivOverlay');
     const btnIntegralOverlay = document.getElementById('btnIntegralOverlay');
     const btnMarkersOverlay = document.getElementById('btnMarkersOverlay');
@@ -106,6 +123,34 @@
     const symIntegralRow = document.getElementById('symIntegralRow');
     const symIntegralVal = document.getElementById('symIntegralVal');
     const funcStatus = document.getElementById('funcStatus');
+
+    const vectorPanel = document.getElementById('vectorPanel');
+    const btnCloseVector = document.getElementById('btnCloseVector');
+    const btnVecAim = document.getElementById('btnVecAim');
+    const btnClearVectors = document.getElementById('btnClearVectors');
+    const vectorForm = document.getElementById('vectorForm');
+    const vecUxInput = document.getElementById('vecUxInput');
+    const vecUyInput = document.getElementById('vecUyInput');
+    const vectorMeta = document.getElementById('vectorMeta');
+    const vectorStatus = document.getElementById('vectorStatus');
+    const vectorPresetsEl = document.getElementById('vectorPresets');
+
+    const arenaPanel = document.getElementById('arenaPanel');
+    const btnCloseArena = document.getElementById('btnCloseArena');
+    const btnArenaReset = document.getElementById('btnArenaReset');
+    const btnArenaRestart = document.getElementById('btnArenaRestart');
+    const arenaWave = document.getElementById('arenaWave');
+    const arenaHpText = document.getElementById('arenaHpText');
+    const arenaHpFill = document.getElementById('arenaHpFill');
+    const arenaScore = document.getElementById('arenaScore');
+    const arenaCombo = document.getElementById('arenaCombo');
+    const arenaAccuracy = document.getElementById('arenaAccuracy');
+    const arenaLog = document.getElementById('arenaLog');
+    const arenaGameOverBanner = document.getElementById('arenaGameOverBanner');
+    const arenaGameOverText = document.getElementById('arenaGameOverText');
+    const weaponBar = document.getElementById('weaponBar');
+    const weaponDesc = document.getElementById('weaponDesc');
+    const btnArenaLaunchVec = document.getElementById('btnArenaLaunchVec');
 
     const trialPanel = document.getElementById('trialPanel');
     const btnCloseTrial = document.getElementById('btnCloseTrial');
@@ -223,6 +268,44 @@
       wakeFrame();
     }
 
+    function syncCanvasCursor() {
+      if (combat.active || (state.showVectorPanel && state.vecAimMode)) {
+        canvas.style.cursor = 'crosshair';
+      } else {
+        canvas.style.cursor = '';
+      }
+    }
+
+    function launchVectorWithSfx(ux, uy) {
+      audioFx.unlock();
+      const res = vectorSystem.launchVector(ux, uy, stickman);
+      if (res && res.kind === 'chasles') {
+        audioFx.playChaslesAdd();
+      } else if (res && res.kind === 'launch') {
+        audioFx.playVectorLaunch();
+      }
+      syncVectorUi(true);
+      wakeFrame();
+      return res;
+    }
+
+    function getQuickVectorComponents() {
+      if (state.vecPanelEdited) {
+        return { ux: vectorSystem.presetUx, uy: vectorSystem.presetUy };
+      }
+      if (combat.active && pointer.overCanvas) {
+        const ux = pointer.worldX - stickman.x;
+        const uy = pointer.worldY - (stickman.y + 0.55);
+        if (Math.hypot(ux, uy) >= 0.45) {
+          return { ux, uy };
+        }
+      }
+      return {
+        ux: (stickman.facing || 1) * Math.abs(vectorSystem.presetUx),
+        uy: vectorSystem.presetUy,
+      };
+    }
+
     function setHelp(enabled) {
       if (enabled && global.innerWidth <= 1000) {
         if (challenges.active) setTrialsMode(false);
@@ -244,6 +327,7 @@
       }
       state.showTouchPad = enabled;
       virtualPad.classList.toggle('hidden', !enabled);
+      if (weaponBar) weaponBar.classList.toggle('with-touchpad', enabled);
       btnTouchPad.classList.toggle('active', enabled);
       btnTouchPad.setAttribute('aria-pressed', String(enabled));
       wakeFrame();
@@ -281,11 +365,23 @@
         wakeFrame();
         return;
       }
+      if (combat.active) {
+        combat.resetRun();
+        state.camera.x = 0;
+        state.camera.y = CONFIG.DEFAULT_CAM_Y;
+        setFollowCamera(true);
+        syncArenaUi(true);
+        syncVectorUi(true);
+        wakeFrame();
+        return;
+      }
       stickman.reset();
       particles.clear();
+      vectorSystem.clear();
       state.camera.x = 0;
       state.camera.y = CONFIG.DEFAULT_CAM_Y;
       setFollowCamera(true);
+      syncVectorUi(true);
       wakeFrame();
     }
 
@@ -296,6 +392,12 @@
     btnFollow.addEventListener('click', () => setFollowCamera(!state.followCamera));
     btnProjections.addEventListener('click', () => setProjections(!state.showProjections));
     btnVelocity.addEventListener('click', () => setVelocity(!state.showVelocity));
+    if (btnVectors) {
+      btnVectors.addEventListener('click', () => setVectorPanel(!state.showVectorPanel));
+    }
+    if (btnArena) {
+      btnArena.addEventListener('click', () => setArenaMode(!combat.active));
+    }
     btnFreeFall.addEventListener('click', () => {
       setFollowCamera(true);
       input.triggerFreeFall();
@@ -351,6 +453,145 @@
         btnFunc.setAttribute('aria-pressed', String(visible));
       }
       wakeFrame();
+    }
+
+    function setVectorPanel(visible) {
+      if (visible && global.innerWidth <= 1000) {
+        if (state.showHelp) setHelp(false);
+        if (state.showTouchPad) setTouchPad(false);
+      }
+      state.showVectorPanel = visible;
+      if (vectorPanel) vectorPanel.classList.toggle('hidden', !visible);
+      if (btnVectors) {
+        btnVectors.classList.toggle('active', visible);
+        btnVectors.setAttribute('aria-pressed', String(visible));
+      }
+      if (!visible) {
+        vectorSystem.clearAimPreview();
+      }
+      syncCanvasCursor();
+      syncVectorUi(true);
+      wakeFrame();
+    }
+
+    let lastArenaSig = '';
+
+    function syncArenaUi(force = false) {
+      if (!arenaPanel || !combat.active) {
+        lastArenaSig = '';
+        return;
+      }
+      const totalHits = combat.rightHits + combat.wrongHits;
+      const accPct = totalHits > 0 ? Math.round((combat.rightHits / totalHits) * 100) : 100;
+      const sig = `${combat.wave}|${Math.round(combat.hp)}|${combat.score}|${combat.combo}|${accPct}|${combat.weaponIndex}|${combat.gameOver ? 1 : 0}|${combat.lastLog}`;
+      if (!force && sig === lastArenaSig) return;
+      lastArenaSig = sig;
+
+      if (arenaWave) arenaWave.textContent = `الموجة ${combat.wave}`;
+      const hpPct = utils.clamp(Math.round((combat.hp / combat.maxHp) * 100), 0, 100);
+      if (arenaHpText) arenaHpText.textContent = `${hpPct}%`;
+      if (arenaHpFill) {
+        arenaHpFill.style.width = `${hpPct}%`;
+        arenaHpFill.classList.toggle('is-warn', hpPct > 30 && hpPct <= 55);
+        arenaHpFill.classList.toggle('is-low', hpPct <= 30);
+      }
+      if (arenaScore) arenaScore.textContent = String(combat.score);
+      if (arenaCombo) arenaCombo.textContent = `×${combat.combo}`;
+      if (arenaAccuracy) arenaAccuracy.textContent = `${accPct}%`;
+      if (arenaLog && combat.lastLog) arenaLog.textContent = combat.lastLog;
+
+      if (arenaGameOverBanner) {
+        arenaGameOverBanner.classList.toggle('hidden', !combat.gameOver);
+      }
+      if (combat.gameOver && arenaGameOverText) {
+        arenaGameOverText.textContent = `انتهى التوازن عند الموجة ${combat.wave} · نقاط ${combat.score} · أقصى سلسلة ×${combat.bestCombo}`;
+      }
+
+      if (weaponBar) {
+        const wBtns = weaponBar.querySelectorAll('.weapon-btn[data-weapon]');
+        wBtns.forEach((btn) => {
+          const idx = Number(btn.dataset.weapon);
+          const isAct = idx === combat.weaponIndex;
+          btn.classList.toggle('active', isAct);
+          btn.setAttribute('aria-pressed', String(isAct));
+        });
+        const w = combat.getActiveWeapon();
+        if (weaponDesc && w) {
+          weaponDesc.textContent = `${w.descAr} · إطلاق: نقر بالماوس أو J`;
+        }
+      }
+    }
+
+    function setArenaMode(enabled) {
+      if (enabled === combat.active) return;
+      if (enabled) {
+        if (challenges.active) setTrialsMode(false);
+        if (state.showHelp) setHelp(false);
+        if (state.showTouchPad && global.innerWidth <= 1000) setTouchPad(false);
+        if (state.showFuncPanel && global.innerWidth <= 1000) setFuncPanel(false);
+        combat.enter();
+        input.setWeaponKeysEnabled(true);
+        setFollowCamera(true);
+        if (arenaPanel) arenaPanel.classList.remove('hidden');
+        if (weaponBar) {
+          weaponBar.classList.remove('hidden');
+          weaponBar.classList.toggle('with-touchpad', state.showTouchPad);
+        }
+        if (btnArena) {
+          btnArena.classList.add('active');
+          btnArena.setAttribute('aria-pressed', 'true');
+        }
+        syncArenaUi(true);
+      } else {
+        combat.exit();
+        input.setWeaponKeysEnabled(false);
+        if (arenaPanel) arenaPanel.classList.add('hidden');
+        if (weaponBar) weaponBar.classList.add('hidden');
+        if (btnArena) {
+          btnArena.classList.remove('active');
+          btnArena.setAttribute('aria-pressed', 'false');
+        }
+      }
+      syncCanvasCursor();
+      syncVectorUi(true);
+      wakeFrame();
+    }
+
+    let lastVectorSig = '';
+
+    function syncVectorUi(force = false) {
+      if (!vectorPanel) return;
+      const ux = vectorSystem.presetUx;
+      const uy = vectorSystem.presetUy;
+      const norm = Math.hypot(ux, uy);
+      const deg = (Math.atan2(uy, ux) * 180) / Math.PI;
+      const sig = `${ux.toFixed(2)}|${uy.toFixed(2)}|${state.vecAimMode ? 1 : 0}|${vectorSystem.vectors.length}|${vectorSystem.lastFormulaText}|${stickman.ridingVector ? 1 : 0}`;
+      if (!force && sig === lastVectorSig) return;
+      lastVectorSig = sig;
+
+      if (vectorMeta) {
+        vectorMeta.textContent = `‖u⃗‖ = ${norm.toFixed(2)} · θ = ${deg.toFixed(0)}° · Active: ${vectorSystem.vectors.length}`;
+      }
+      if (btnVecAim) {
+        btnVecAim.classList.toggle('active', state.vecAimMode);
+        btnVecAim.setAttribute('aria-pressed', String(state.vecAimMode));
+      }
+      if (vectorPresetsEl) {
+        vectorPresetsEl.querySelectorAll('.vec-preset-chip').forEach((chip) => {
+          const cx = Number(chip.dataset.ux);
+          const cy = Number(chip.dataset.uy);
+          chip.classList.toggle('active', Math.abs(cx - ux) < 0.05 && Math.abs(cy - uy) < 0.05);
+        });
+      }
+      if (vectorStatus) {
+        if (vectorSystem.lastFormulaText) {
+          vectorStatus.textContent = vectorSystem.lastFormulaText;
+        } else {
+          vectorStatus.textContent = state.vecAimMode && !combat.active
+            ? 'وضع التصويب بالماوس مفعّل: انقر لإطلاق المتجهة (سحب الكاميرا باليمين). اركض [Shift] واقفز للركوب!'
+            : 'أطلق u⃗ بـ [U] ثم اركض بـ [Shift] واقفز للركوب، أو اضغط [U] أثناء الركوب لعلاقة شال!';
+        }
+      }
     }
 
     function syncOverlayToggleBtn(btn, isOn) {
@@ -488,6 +729,7 @@
     function setTrialsMode(enabled) {
       if (enabled === challenges.active) return;
       if (enabled) {
+        if (combat.active) setArenaMode(false);
         restoreFuncOnExitTrials = state.showFuncPanel;
         restoreMarkersOnExitTrials = functions.showCriticalMarkers;
         if (restoreMarkersOnExitTrials) {
@@ -741,8 +983,114 @@
       });
     }
 
+    // Vector Panel & Presets wiring
+    if (btnCloseVector) {
+      btnCloseVector.addEventListener('click', () => setVectorPanel(false));
+    }
+    if (btnVecAim) {
+      btnVecAim.addEventListener('click', () => {
+        state.vecAimMode = !state.vecAimMode;
+        if (!state.vecAimMode) vectorSystem.clearAimPreview();
+        syncCanvasCursor();
+        syncVectorUi(true);
+        wakeFrame();
+      });
+    }
+    if (btnClearVectors) {
+      btnClearVectors.addEventListener('click', () => {
+        if (stickman.ridingVector) stickman.dismountVector(false);
+        vectorSystem.clear();
+        syncVectorUi(true);
+        wakeFrame();
+      });
+    }
+
+    function readVectorInputs() {
+      const rawX = vecUxInput ? parseFloat(vecUxInput.value) : vectorSystem.presetUx;
+      const rawY = vecUyInput ? parseFloat(vecUyInput.value) : vectorSystem.presetUy;
+      if (Number.isFinite(rawX) || Number.isFinite(rawY)) {
+        vectorSystem.setPresetComponents(
+          Number.isFinite(rawX) ? rawX : vectorSystem.presetUx,
+          Number.isFinite(rawY) ? rawY : vectorSystem.presetUy
+        );
+      }
+    }
+
+    if (vecUxInput) {
+      vecUxInput.addEventListener('input', () => {
+        state.vecPanelEdited = true;
+        readVectorInputs();
+        syncVectorUi(true);
+      });
+      vecUxInput.addEventListener('keydown', (e) => {
+        if (e.code === 'Escape') vecUxInput.blur();
+      });
+    }
+    if (vecUyInput) {
+      vecUyInput.addEventListener('input', () => {
+        state.vecPanelEdited = true;
+        readVectorInputs();
+        syncVectorUi(true);
+      });
+      vecUyInput.addEventListener('keydown', (e) => {
+        if (e.code === 'Escape') vecUyInput.blur();
+      });
+    }
+    if (vectorForm) {
+      vectorForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        state.vecPanelEdited = true;
+        readVectorInputs();
+        if (vecUxInput) vecUxInput.blur();
+        if (vecUyInput) vecUyInput.blur();
+        launchVectorWithSfx(vectorSystem.presetUx, vectorSystem.presetUy);
+      });
+    }
+    if (vectorPresetsEl) {
+      vectorPresetsEl.querySelectorAll('.vec-preset-chip').forEach((chip) => {
+        chip.addEventListener('click', () => {
+          const ux = parseFloat(chip.dataset.ux);
+          const uy = parseFloat(chip.dataset.uy);
+          state.vecPanelEdited = true;
+          vectorSystem.setPresetComponents(ux, uy);
+          if (vecUxInput) vecUxInput.value = String(vectorSystem.presetUx);
+          if (vecUyInput) vecUyInput.value = String(vectorSystem.presetUy);
+          launchVectorWithSfx(vectorSystem.presetUx, vectorSystem.presetUy);
+        });
+      });
+    }
+
+    // Arena Panel & Weapon Bar wiring
+    if (btnCloseArena) {
+      btnCloseArena.addEventListener('click', () => setArenaMode(false));
+    }
+    if (btnArenaReset) {
+      btnArenaReset.addEventListener('click', resetAll);
+    }
+    if (btnArenaRestart) {
+      btnArenaRestart.addEventListener('click', resetAll);
+    }
+    if (weaponBar) {
+      weaponBar.querySelectorAll('.weapon-btn[data-weapon]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          audioFx.unlock();
+          combat.setWeaponIndex(Number(btn.dataset.weapon));
+          syncArenaUi(true);
+          wakeFrame();
+        });
+      });
+    }
+    if (btnArenaLaunchVec) {
+      btnArenaLaunchVec.addEventListener('click', () => {
+        const comp = getQuickVectorComponents();
+        launchVectorWithSfx(comp.ux, comp.uy);
+      });
+    }
+
     syncFxButton();
     syncFuncControls();
+    syncVectorUi(true);
+    syncCanvasCursor();
 
     if (global.innerWidth <= 1000) {
       setHelp(false);
@@ -763,7 +1111,7 @@
         return;
       }
       const isDirectDance3 =
-        e.code === 'Digit3' ||
+        (!combat.active && e.code === 'Digit3') ||
         (e.code === 'KeyZ' && !stickman.dancing && stickman.danceStyle === 2);
       honoredAudio.unlockFromGesture(isDirectDance3);
       if (e.code === 'KeyH') setHelp(!state.showHelp);
@@ -779,9 +1127,75 @@
       else if (e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract') zoomBy(1 / 1.18);
     });
 
-    // Canvas mouse drag pan & wheel zoom
+    function updatePointerFromEvent(e) {
+      const rect = canvas.getBoundingClientRect();
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+      pointer.screenX = sx;
+      pointer.screenY = sy;
+      pointer.overCanvas = sx >= 0 && sx <= rect.width && sy >= 0 && sy <= rect.height;
+      const w = grid.screenToWorld(sx, sy, state.camera);
+      pointer.worldX = w.x;
+      pointer.worldY = w.y;
+    }
+
+    function updateVectorAimPreviewFromPointer() {
+      if (combat.active || !state.showVectorPanel || !state.vecAimMode || !pointer.overCanvas) {
+        if (vectorSystem.preview) {
+          vectorSystem.clearAimPreview();
+        }
+        return;
+      }
+      const ox = stickman.x;
+      const oy = Math.max(0.28, stickman.y + 0.34);
+      vectorSystem.setAimPreview(ox, oy, pointer.worldX - ox, pointer.worldY - oy);
+    }
+
+    function fireActiveWeaponAtPointer() {
+      if (!combat.active || combat.gameOver) return;
+      audioFx.unlock();
+      const aimX = pointer.overCanvas
+        ? pointer.worldX - stickman.x
+        : stickman.facing || 1;
+      const aimY = pointer.overCanvas
+        ? pointer.worldY - (stickman.y + 0.92)
+        : 0;
+      combat.fireWeapon(aimX, aimY);
+      wakeFrame();
+    }
+
+    canvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+    });
+
+    let vecAimPressed = false;
+
+    // Canvas mouse aim/fire/vector-launch, drag pan & wheel zoom
     canvas.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0 && e.button !== 1) return;
+      updatePointerFromEvent(e);
+      if (e.button === 1 || e.button === 2) {
+        state.dragging = true;
+        state.dragLastX = e.clientX;
+        state.dragLastY = e.clientY;
+        canvas.setPointerCapture(e.pointerId);
+        wakeFrame();
+        return;
+      }
+      if (e.button !== 0) return;
+
+      if (combat.active) {
+        fireActiveWeaponAtPointer();
+        return;
+      }
+
+      if (state.showVectorPanel && state.vecAimMode) {
+        vecAimPressed = true;
+        updateVectorAimPreviewFromPointer();
+        canvas.setPointerCapture(e.pointerId);
+        wakeFrame();
+        return;
+      }
+
       state.dragging = true;
       state.dragLastX = e.clientX;
       state.dragLastY = e.clientY;
@@ -790,23 +1204,43 @@
     });
 
     canvas.addEventListener('pointermove', (e) => {
-      if (!state.dragging) return;
-      const dx = e.clientX - state.dragLastX;
-      const dy = e.clientY - state.dragLastY;
-      state.dragLastX = e.clientX;
-      state.dragLastY = e.clientY;
+      updatePointerFromEvent(e);
+      if (state.dragging) {
+        const dx = e.clientX - state.dragLastX;
+        const dy = e.clientY - state.dragLastY;
+        state.dragLastX = e.clientX;
+        state.dragLastY = e.clientY;
 
-      if (Math.hypot(dx, dy) > 1) {
-        setFollowCamera(false);
-        state.camera.x -= dx / state.camera.ppu;
-        state.camera.y += dy / state.camera.ppu;
+        if (Math.hypot(dx, dy) > 1) {
+          setFollowCamera(false);
+          state.camera.x -= dx / state.camera.ppu;
+          state.camera.y += dy / state.camera.ppu;
+          wakeFrame();
+        }
+        return;
+      }
+      if (combat.active || (state.showVectorPanel && state.vecAimMode)) {
+        updateVectorAimPreviewFromPointer();
         wakeFrame();
       }
     });
 
     function endDrag(e) {
-      if (!state.dragging) return;
-      state.dragging = false;
+      updatePointerFromEvent(e);
+      if (vecAimPressed && e.type === 'pointerup') {
+        vecAimPressed = false;
+        const ox = stickman.x;
+        const oy = Math.max(0.28, stickman.y + 0.34);
+        const ux = pointer.worldX - ox;
+        const uy = pointer.worldY - oy;
+        vectorSystem.clearAimPreview();
+        launchVectorWithSfx(ux, uy);
+      } else {
+        vecAimPressed = false;
+      }
+      if (state.dragging) {
+        state.dragging = false;
+      }
       try {
         canvas.releasePointerCapture(e.pointerId);
       } catch (_) {
@@ -815,7 +1249,17 @@
       wakeFrame();
     }
     canvas.addEventListener('pointerup', endDrag);
-    canvas.addEventListener('pointercancel', endDrag);
+    canvas.addEventListener('pointercancel', (e) => {
+      vecAimPressed = false;
+      vectorSystem.clearAimPreview();
+      endDrag(e);
+    });
+    canvas.addEventListener('pointerleave', () => {
+      pointer.overCanvas = false;
+      if (!vecAimPressed) {
+        vectorSystem.clearAimPreview();
+      }
+    });
 
     canvas.addEventListener(
       'wheel',
@@ -1186,6 +1630,86 @@
       }
     });
 
+    function renderCombatReticleAndIndicators(ctx, camera, gridRenderer, theme) {
+      if (!combat.active) return;
+
+      const isBlack = theme.bg === '#000000';
+      const activeWeapon = combat.getActiveWeapon();
+      const weaponCol = activeWeapon
+        ? isBlack
+          ? activeWeapon.colorBlack
+          : activeWeapon.colorLight
+        : '#38bdf8';
+
+      // Sightline reticle toward mouse pointer
+      if (!combat.gameOver && pointer.overCanvas && pointer.screenX !== null) {
+        const pOrigin = gridRenderer.worldToScreen(stickman.x, stickman.y + 0.92, camera);
+        const sx = pointer.screenX;
+        const sy = pointer.screenY;
+        ctx.save();
+        ctx.strokeStyle = weaponCol;
+        ctx.globalAlpha = 0.55;
+        ctx.lineWidth = 1.4;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(pOrigin.x, pOrigin.y);
+        ctx.lineTo(sx, sy);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.globalAlpha = 0.9;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 9, 0, Math.PI * 2);
+        ctx.moveTo(sx - 14, sy);
+        ctx.lineTo(sx - 5, sy);
+        ctx.moveTo(sx + 5, sy);
+        ctx.lineTo(sx + 14, sy);
+        ctx.moveTo(sx, sy - 14);
+        ctx.lineTo(sx, sy - 5);
+        ctx.moveTo(sx, sy + 5);
+        ctx.lineTo(sx, sy + 14);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Off-screen enemy edge indicators
+      for (const e of combat.enemies) {
+        const sp = gridRenderer.worldToScreen(e.x, e.y, camera);
+        if (sp.x >= 10 && sp.x <= gridRenderer.width - 10) continue;
+        const onLeft = sp.x < 10;
+        const edgeX = onLeft ? 20 : gridRenderer.width - 20;
+        const edgeY = utils.clamp(sp.y, 120, Math.max(140, gridRenderer.height - 110));
+        const col =
+          e.type === 'deficit'
+            ? '#c084fc'
+            : e.type === 'harmonic'
+              ? '#f472b6'
+              : e.type === 'vector_charger'
+                ? '#f59e0b'
+                : '#38bdf8';
+
+        ctx.save();
+        ctx.fillStyle = col;
+        ctx.strokeStyle = theme.coordTagBg;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        if (onLeft) {
+          ctx.moveTo(edgeX - 8, edgeY);
+          ctx.lineTo(edgeX + 5, edgeY - 7);
+          ctx.lineTo(edgeX + 5, edgeY + 7);
+        } else {
+          ctx.moveTo(edgeX + 8, edgeY);
+          ctx.lineTo(edgeX - 5, edgeY - 7);
+          ctx.lineTo(edgeX - 5, edgeY + 7);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
     function frame(now) {
       rafId = 0;
       if (document.hidden) {
@@ -1209,15 +1733,59 @@
       const dt = Math.min(Math.max(rawDt, 0.001), 0.05);
 
       const frameInput = input.sampleFrame();
-      if (challenges.active && frameInput.resetPressed) {
-        challenges.resetTrial();
-        setFollowCamera(true);
-        syncTrialUi(true);
-        frameInput.resetPressed = false;
+      if (frameInput.resetPressed) {
+        if (challenges.active) {
+          challenges.resetTrial();
+          setFollowCamera(true);
+          syncTrialUi(true);
+          frameInput.resetPressed = false;
+        } else if (combat.active) {
+          combat.resetRun();
+          state.camera.x = 0;
+          state.camera.y = CONFIG.DEFAULT_CAM_Y;
+          setFollowCamera(true);
+          syncArenaUi(true);
+          syncVectorUi(true);
+          frameInput.resetPressed = false;
+        } else {
+          vectorSystem.clear();
+          syncVectorUi(true);
+        }
       }
+
+      if (combat.active && frameInput.weaponSelectIndex !== null) {
+        combat.setWeaponIndex(frameInput.weaponSelectIndex);
+        syncArenaUi(true);
+      }
+
+      if (frameInput.vectorLaunchPressed) {
+        const comp = getQuickVectorComponents();
+        launchVectorWithSfx(comp.ux, comp.uy);
+      }
+
+      if (combat.active && frameInput.firePressed && !combat.gameOver) {
+        fireActiveWeaponAtPointer();
+      }
+
+      vectorSystem.update(dt, stickman);
+      const wasRidingVector = Boolean(stickman.ridingVector);
       const prevLocked = challenges.active ? challenges.lockedTargets.size : 0;
       const prevStar = challenges.active ? challenges.starCollected : false;
+
       stickman.update(dt, frameInput);
+      if (!wasRidingVector && stickman.ridingVector) {
+        audioFx.playVectorMount();
+      }
+
+      if (combat.active) {
+        combat.update(dt);
+        syncArenaUi();
+      }
+
+      if (state.showVectorPanel) {
+        syncVectorUi();
+      }
+
       if (challenges.active) {
         challenges.update(dt);
         if (challenges.lockedTargets.size > prevLocked) {
@@ -1242,13 +1810,17 @@
         const targetCamX = stickman.x + stickman.vx * CONFIG.CAMERA_LOOKAHEAD_FACTOR;
         const fallOffset = stickman.vy < -6 ? stickman.vy * 0.09 : 0;
         const honoredCamY = CONFIG.DEFAULT_CAM_Y + 0.45;
+        const baseCamY =
+          stickman.y < 0
+            ? stickman.y + CONFIG.DEFAULT_CAM_Y * 0.65
+            : Math.max(
+                CONFIG.DEFAULT_CAM_Y,
+                CONFIG.DEFAULT_CAM_Y + Math.max(0, stickman.y - 1.35)
+              );
         const targetCamY =
           stickman.dancing && stickman.danceStyle === 2
             ? honoredCamY
-            : Math.max(
-                CONFIG.DEFAULT_CAM_Y,
-                CONFIG.DEFAULT_CAM_Y + Math.max(0, stickman.y - 1.35) + fallOffset
-              );
+            : baseCamY + fallOffset;
         const followYSpeed =
           Math.abs(stickman.vy) > 10 ? 12 : CONFIG.CAMERA_FOLLOW_Y_SPEED;
 
@@ -1270,6 +1842,7 @@
       const movingOrSurfingSlope =
         stickman.dancing ||
         stickman.climbing ||
+        stickman.ridingVector ||
         !stickman.grounded ||
         Math.abs(stickman.vx) > 0.015 ||
         Math.abs(stickman.vy) > 0.015 ||
@@ -1279,6 +1852,7 @@
         stickman.dashTimer > 0 ||
         stickman.flipTimer > 0 ||
         stickman.heavyLandTimer > 0 ||
+        stickman.damageFlashTimer > 0 ||
         stickman.landSquash > 0.01 ||
         stickman.danceBlend > 0.02;
 
@@ -1288,6 +1862,8 @@
       const keepLoopRunning =
         movingOrSurfingSlope ||
         particles.hasAny() ||
+        vectorSystem.hasAny() ||
+        combat.active ||
         state.dragging ||
         camSettling ||
         input.hasActiveInput() ||
@@ -1316,12 +1892,17 @@
       grid.renderAxisClimbCue(ctx, stickman, state.camera, theme);
       functions.render(ctx, state.camera, grid, theme, stickman);
       challenges.render(ctx, state.camera, grid, theme);
+      vectorSystem.render(ctx, state.camera, grid, theme, {
+        showProjections: state.showProjections,
+      });
+      combat.render(ctx, state.camera, grid, theme);
       particles.render(ctx, state.camera, grid, theme);
       stickman.render(ctx, state.camera, grid, theme);
       grid.renderStickmanOverlays(ctx, stickman, state.camera, theme, {
         showProjections: state.showProjections,
         showVelocity: state.showVelocity,
       });
+      renderCombatReticleAndIndicators(ctx, state.camera, grid, theme);
 
       ctx.restore();
 

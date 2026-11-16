@@ -75,6 +75,17 @@
     SURF_MAX_SPEED: 26.0,
     SURF_MAX_SLOPE: 3.6,
 
+    // Launched Vector & Riding Physics
+    VEC_MIN_LEN: 1.4,
+    VEC_MAX_LEN: 7.5,
+    VEC_DEFAULT_UX: 4.5,
+    VEC_DEFAULT_UY: 1.5,
+    VEC_BASE_SPEED: 4.85,
+    VEC_LIFETIME: 6.0,
+    VEC_RIDE_LIFETIME: 7.5,
+    VEC_SHAFT_WALK_SPEED: 4.4,
+    VEC_BOARD_RADIUS: 0.42,
+
     // Camera tracking
     CAMERA_FOLLOW_X_SPEED: 7.5,
     CAMERA_FOLLOW_Y_SPEED: 6.5,
@@ -99,6 +110,9 @@
       vecI: '#ff4d6d',
       vecJ: '#38bdf8',
       vecV: '#22c55e',
+      vecLaunched: '#f59e0b',
+      vecLaunchedGlow: 'rgba(245, 158, 11, 0.32)',
+      vecResultant: '#34d399',
       projection: 'rgba(56, 189, 248, 0.65)',
       projectionX: '#ff4d6d',
       projectionY: '#38bdf8',
@@ -131,6 +145,9 @@
       vecI: '#dc2626',
       vecJ: '#2563eb',
       vecV: '#059669',
+      vecLaunched: '#d97706',
+      vecLaunchedGlow: 'rgba(217, 119, 6, 0.25)',
+      vecResultant: '#059669',
       projection: 'rgba(37, 99, 235, 0.55)',
       projectionX: '#dc2626',
       projectionY: '#2563eb',

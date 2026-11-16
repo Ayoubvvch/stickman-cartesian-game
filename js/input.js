@@ -25,6 +25,8 @@
   const DANCE_KEYS = ['KeyZ'];
   const FLIP_KEYS = ['KeyF'];
   const RESET_KEYS = ['KeyR'];
+  const VECTOR_LAUNCH_KEYS = ['KeyU'];
+  const FIRE_KEYS = ['KeyJ'];
 
   function isEditableTarget(target) {
     if (!target) return false;
@@ -55,6 +57,8 @@
 
       this.queuedFreeFall = false;
       this.queuedDance = false;
+      this.queuedVectorLaunch = false;
+      this.weaponKeysEnabled = false;
 
       this.activeSource = 'keyboard';
       this.activeGamepadIndex = null;
@@ -114,6 +118,9 @@
         freeFallPressed: false,
         dancePressed: false,
         danceStyleIndex: null,
+        weaponSelectIndex: null,
+        vectorLaunchPressed: false,
+        firePressed: false,
         flipPressed: false,
         gamepadYPressed: false,
         resetPressed: false,
@@ -151,7 +158,8 @@
         this.justPressedKeys.size > 0 ||
         this.justReleasedKeys.size > 0 ||
         this.queuedFreeFall ||
-        this.queuedDance
+        this.queuedDance ||
+        this.queuedVectorLaunch
       ) {
         return true;
       }
@@ -259,6 +267,15 @@
     triggerDance() {
       this.queuedDance = true;
       this._notifyWake();
+    }
+
+    triggerVectorLaunch() {
+      this.queuedVectorLaunch = true;
+      this._notifyWake();
+    }
+
+    setWeaponKeysEnabled(enabled) {
+      this.weaponKeysEnabled = Boolean(enabled);
     }
 
     clearVirtual() {
@@ -472,15 +489,28 @@
         this.queuedDance;
 
       let danceStyleIndex = null;
-      if (this.justPressedKeys.has('Digit1')) danceStyleIndex = 0;
-      else if (this.justPressedKeys.has('Digit2')) danceStyleIndex = 1;
-      else if (this.justPressedKeys.has('Digit3')) danceStyleIndex = 2;
+      let weaponSelectIndex = null;
+      if (this.weaponKeysEnabled) {
+        if (this.justPressedKeys.has('Digit1')) weaponSelectIndex = 0;
+        else if (this.justPressedKeys.has('Digit2')) weaponSelectIndex = 1;
+        else if (this.justPressedKeys.has('Digit3')) weaponSelectIndex = 2;
+        else if (this.justPressedKeys.has('Digit4')) weaponSelectIndex = 3;
+      } else {
+        if (this.justPressedKeys.has('Digit1')) danceStyleIndex = 0;
+        else if (this.justPressedKeys.has('Digit2')) danceStyleIndex = 1;
+        else if (this.justPressedKeys.has('Digit3')) danceStyleIndex = 2;
+      }
 
+      const kbVectorLaunchPressed =
+        this._anyInSet(this.justPressedKeys, VECTOR_LAUNCH_KEYS) ||
+        this.queuedVectorLaunch;
+      const kbFirePressed = this._anyInSet(this.justPressedKeys, FIRE_KEYS);
       const kbFlipPressed = this._anyInSet(this.justPressedKeys, FLIP_KEYS);
       const kbResetPressed = this._anyInSet(this.justPressedKeys, RESET_KEYS);
 
       this.queuedFreeFall = false;
       this.queuedDance = false;
+      this.queuedVectorLaunch = false;
       this.prevVirtualJump = this.virtualState.jump;
       this.prevVirtualDash = this.virtualState.dash;
       this.prevVirtualDance = this.virtualState.dance;
@@ -528,6 +558,9 @@
       out.freeFallPressed = kbFreeFallPressed;
       out.dancePressed = kbDancePressed;
       out.danceStyleIndex = danceStyleIndex;
+      out.weaponSelectIndex = weaponSelectIndex;
+      out.vectorLaunchPressed = kbVectorLaunchPressed;
+      out.firePressed = kbFirePressed;
       out.flipPressed = kbFlipPressed;
       out.gamepadYPressed = Boolean(gp && gp.yButtonPressed);
       out.resetPressed = kbResetPressed || Boolean(gp && gp.resetPressed);

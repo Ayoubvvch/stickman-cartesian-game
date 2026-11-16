@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Stickman · Orthonormal Cartesian Frame v2.0</title>
-  <link rel="stylesheet" href="style.css?v=2.0.0" />
+  <title>Stickman · Orthonormal Cartesian Frame v3.0</title>
+  <link rel="stylesheet" href="style.css?v=3.0.0" />
 </head>
 <body class="theme-black">
   <div id="app">
@@ -14,41 +14,92 @@
 
     <!-- Top HUD Bar -->
     <header class="hud-top">
-      <!-- Live Math Coordinates & Physics Card -->
-      <section class="hud-card telemetry-card" aria-label="Coordinates & Motion">
-        <div class="card-header">
-          <span class="badge-title">Orthonormal Frame</span>
-          <span class="math-basis">(<i>O</i>; <span class="vec">i</span>, <span class="vec">j</span>)</span>
-          <span id="stateBadge" class="state-badge">Idle</span>
-        </div>
+      <!-- Left HUD Stack: Telemetry + Math Battle Arena -->
+      <div class="hud-left-stack">
+        <!-- Live Math Coordinates & Physics Card -->
+        <section class="hud-card telemetry-card" aria-label="Coordinates & Motion">
+          <div class="card-header">
+            <span class="badge-title">Orthonormal Frame</span>
+            <span class="math-basis">(<i>O</i>; <span class="vec">i</span>, <span class="vec">j</span>)</span>
+            <span id="stateBadge" class="state-badge">Idle</span>
+          </div>
 
-        <div class="telemetry-grid">
-          <div class="metric">
-            <span class="metric-label">x</span>
-            <span id="coordX" class="metric-value accent-x">0.00</span>
+          <div class="telemetry-grid">
+            <div class="metric">
+              <span class="metric-label">x</span>
+              <span id="coordX" class="metric-value accent-x">0.00</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">y</span>
+              <span id="coordY" class="metric-value accent-y">0.00</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">v<sub>x</sub></span>
+              <span id="velX" class="metric-value">0.00</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">v<sub>y</sub></span>
+              <span id="velY" class="metric-value">0.00</span>
+            </div>
           </div>
-          <div class="metric">
-            <span class="metric-label">y</span>
-            <span id="coordY" class="metric-value accent-y">0.00</span>
-          </div>
-          <div class="metric">
-            <span class="metric-label">v<sub>x</sub></span>
-            <span id="velX" class="metric-value">0.00</span>
-          </div>
-          <div class="metric">
-            <span class="metric-label">v<sub>y</sub></span>
-            <span id="velY" class="metric-value">0.00</span>
-          </div>
-        </div>
 
-        <div class="scale-row">
-          <span class="scale-label">Scale:</span>
-          <span id="scaleInfo" class="scale-value">1 u = 72 px</span>
-          <span class="ortho-pill" title="Perpendicular axes with equal unit basis lengths">‖<span class="vec">i</span>‖ = ‖<span class="vec">j</span>‖ = 1</span>
-        </div>
-      </section>
+          <div class="scale-row">
+            <span class="scale-label">Scale:</span>
+            <span id="scaleInfo" class="scale-value">1 u = 72 px</span>
+            <span class="ortho-pill" title="Perpendicular axes with equal unit basis lengths">‖<span class="vec">i</span>‖ = ‖<span class="vec">j</span>‖ = 1</span>
+          </div>
+        </section>
 
-      <!-- Organized Toolbar & Input Status -->
+        <!-- Math Battle Arena HUD Card (Hidden until Arena Mode is active) -->
+        <section id="arenaPanel" class="hud-card arena-panel hidden" dir="rtl" aria-label="ساحة المعركة الرياضية">
+          <div class="arena-header">
+            <div class="arena-title-wrap">
+              <strong>ساحة المعركة الرياضية</strong>
+              <span id="arenaWave" class="arena-wave-pill">الموجة 1</span>
+            </div>
+            <div class="arena-header-actions">
+              <button id="btnArenaReset" type="button" class="tool-btn" title="إعادة المعركة (R)">إعادة</button>
+              <button id="btnCloseArena" type="button" class="close-mini" aria-label="إغلاق الساحة">×</button>
+            </div>
+          </div>
+
+          <div class="arena-hp-block">
+            <div class="arena-hp-label-row">
+              <span>التوازن الرياضي</span>
+              <span id="arenaHpText" class="arena-hp-text" dir="ltr">100%</span>
+            </div>
+            <div class="arena-hp-track">
+              <div id="arenaHpFill" class="arena-hp-fill" style="width: 100%"></div>
+            </div>
+          </div>
+
+          <div class="arena-stats-grid" dir="ltr">
+            <div class="arena-stat">
+              <span class="arena-stat-label">Score</span>
+              <span id="arenaScore" class="arena-stat-val">0</span>
+            </div>
+            <div class="arena-stat">
+              <span class="arena-stat-label">Combo</span>
+              <span id="arenaCombo" class="arena-stat-val">×0</span>
+            </div>
+            <div class="arena-stat">
+              <span class="arena-stat-label">Accuracy</span>
+              <span id="arenaAccuracy" class="arena-stat-val">100%</span>
+            </div>
+          </div>
+
+          <div id="arenaLog" class="arena-log" aria-live="polite">
+            استعمل [1] d/dx لكثير الحدود، و[3] -f(x) للدالة الموجية/الأسّية!
+          </div>
+
+          <div id="arenaGameOverBanner" class="arena-gameover hidden">
+            <div id="arenaGameOverText" class="arena-gameover-text">انكسر التوازن الرياضي!</div>
+            <button id="btnArenaRestart" type="button" class="func-apply-btn">إعادة المعركة [R]</button>
+          </div>
+        </section>
+      </div>
+
+      <!-- Organized Toolbar, Input Status & Vector Panel -->
       <div class="hud-right-stack">
         <nav class="hud-card toolbar-card" aria-label="Organized Controls">
           <!-- Group 1: Camera & View -->
@@ -65,10 +116,12 @@
           <div class="tool-group" role="group" aria-label="Math & Calculus">
             <button id="btnProjections" class="tool-btn active" title="Show (x, y) Projections (P)" aria-pressed="true">Proj</button>
             <button id="btnVelocity" class="tool-btn" title="Show Velocity Vector v (V)" aria-pressed="false"><span class="vec">v</span></button>
+            <button id="btnVectors" class="tool-btn" title="Vector Launcher & Rideable Vectors u⃗ (U)" aria-pressed="false"><span class="vec">u</span> Vec</button>
             <button id="btnFunc" class="tool-btn" title="Open Function Lab f(x) (Off by default)" aria-pressed="false">
               <span id="funcActiveDot" class="func-active-dot" aria-hidden="true"></span>f(x)
             </button>
             <button id="btnTrials" class="tool-btn tool-trials" title="Derivative Mastery Challenges" aria-pressed="false">Trials</button>
+            <button id="btnArena" class="tool-btn tool-arena" title="ساحة المعركة الرياضية · Math Battle Arena" aria-pressed="false">Arena</button>
           </div>
 
           <span class="tool-sep" aria-hidden="true"></span>
@@ -114,8 +167,81 @@
             </div>
           </div>
         </div>
+
+        <!-- Vector Launcher & Chasles Composition Panel -->
+        <section id="vectorPanel" class="hud-card vector-panel hidden" aria-label="Vector Launcher">
+          <div class="vector-header">
+            <div class="vector-title-wrap">
+              <strong><span class="vec">u</span> Vector Launcher</strong>
+              <span id="vectorMeta" class="vector-meta">‖u⃗‖ = 4.74 · θ = 18°</span>
+            </div>
+            <div class="vector-header-actions">
+              <button id="btnVecAim" type="button" class="tool-btn active" aria-pressed="true" title="Left-Click on plane to aim & launch vector u⃗">Aim</button>
+              <button id="btnClearVectors" type="button" class="tool-btn" title="Clear active vectors">Clear</button>
+              <button id="btnCloseVector" type="button" class="close-mini" aria-label="Close Vector Panel">×</button>
+            </div>
+          </div>
+
+          <form id="vectorForm" class="vector-form" autocomplete="off">
+            <label class="vec-field">
+              <span>u<sub>x</sub></span>
+              <input id="vecUxInput" type="number" step="0.5" min="-7.5" max="7.5" value="4.5" aria-label="Vector x component" />
+            </label>
+            <label class="vec-field">
+              <span>u<sub>y</sub></span>
+              <input id="vecUyInput" type="number" step="0.5" min="-7.5" max="7.5" value="1.5" aria-label="Vector y component" />
+            </label>
+            <button id="btnLaunchVector" type="submit" class="func-apply-btn">Launch [U]</button>
+          </form>
+
+          <div id="vectorPresets" class="func-presets" role="group" aria-label="Preset Vectors">
+            <button type="button" class="func-chip vec-preset-chip" data-ux="4.5" data-uy="1.5">(4.5, 1.5)</button>
+            <button type="button" class="func-chip vec-preset-chip" data-ux="3.0" data-uy="3.2">(3.0, 3.2)</button>
+            <button type="button" class="func-chip vec-preset-chip" data-ux="-4.5" data-uy="1.5">(-4.5, 1.5)</button>
+            <button type="button" class="func-chip vec-preset-chip" data-ux="0.0" data-uy="3.8">(0, 3.8)</button>
+          </div>
+
+          <div id="vectorStatus" class="vector-status" dir="auto" aria-live="polite">
+            أطلق <span dir="ltr">u⃗</span> بـ <kbd dir="ltr">U</kbd> أو النقر، ثم اركض بـ <kbd dir="ltr">Shift</kbd> واقفز للركوب!
+          </div>
+        </section>
       </div>
     </header>
+
+    <!-- Bottom-Center Weapon & Operator Dock (Active during Math Battle Arena) -->
+    <div id="weaponBar" class="hud-card weapon-bar hidden" aria-label="الأسلحة والعمليات الرياضية">
+      <div class="weapon-buttons" role="group" aria-label="اختيار العملية الرياضية">
+        <button type="button" class="weapon-btn active" data-weapon="0">
+          <kbd>1</kbd>
+          <span class="weapon-sym">d/dx</span>
+          <span class="weapon-sub">الاشتقاق</span>
+        </button>
+        <button type="button" class="weapon-btn" data-weapon="1">
+          <kbd>2</kbd>
+          <span class="weapon-sym">∫ dx</span>
+          <span class="weapon-sub">التكامل</span>
+        </button>
+        <button type="button" class="weapon-btn" data-weapon="2">
+          <kbd>3</kbd>
+          <span class="weapon-sym">-f(x)</span>
+          <span class="weapon-sub">النظير</span>
+        </button>
+        <button type="button" class="weapon-btn" data-weapon="3">
+          <kbd>4</kbd>
+          <span class="weapon-sym">-v⃗ / ⊥</span>
+          <span class="weapon-sub">المتجهة</span>
+        </button>
+        <span class="weapon-sep" aria-hidden="true"></span>
+        <button id="btnArenaLaunchVec" type="button" class="weapon-btn weapon-vec-btn" title="Launch Rideable Vector u⃗ (Chasles mid-ride)">
+          <kbd>U</kbd>
+          <span class="weapon-sym"><span class="vec">u</span></span>
+          <span class="weapon-sub">ركوب/شال</span>
+        </button>
+      </div>
+      <div id="weaponDesc" class="weapon-desc" dir="rtl">
+        يخفض درجة كثيرات الحدود (x³ → 3x² → 6x → 6 → 0) · إطلاق: نقر بالماوس أو J
+      </div>
+    </div>
 
     <!-- Collapsible Controls Legend -->
     <aside id="helpPanel" class="hud-card help-panel" aria-label="Controls Guide">
@@ -125,17 +251,17 @@
       </div>
       <div class="help-columns">
         <div class="help-col">
-          <div class="help-col-title">⌨️ Keyboard</div>
+          <div class="help-col-title">⌨️ Keyboard & Mouse</div>
           <ul>
             <li><kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd> : Walk along x-axis</li>
-            <li><kbd>Shift</kbd> + Move : Sprint (or fast climb / descend)</li>
+            <li><kbd>Shift</kbd> + Move : Sprint (required to chase vectors!)</li>
             <li><kbd>Space</kbd> or <kbd>W</kbd> / <kbd>↑</kbd> : Jump (double jump)</li>
+            <li><kbd>U</kbd> : Launch vector <span class="vec">u</span> (press mid-ride for Chasles <span class="vec">u</span>+<span class="vec">w</span>!)</li>
             <li><kbd>Q</kbd> (or <kbd>W</kbd>/<kbd>↑</kbd> at x = 0) : Climb y-axis</li>
-            <li><kbd>G</kbd> : Free Fall — <kbd>↓</kbd> Dive / <kbd>↑</kbd> Air Brake</li>
+            <li><b>Arena</b> : Weapons <kbd>1</kbd>–<kbd>4</kbd> · Click / <kbd>J</kbd> fire · Right-Drag pan</li>
             <li><b>f(x) Lab</b> : Toggle curves (<code>OFF</code> by default) · <kbd>S</kbd> carve · <kbd>S</kbd>+<kbd>Space</kbd> drop</li>
             <li><b>Trials Mode</b> : Calculus challenges (<kbd>B</kbd> Lock critical/inflection point)</li>
-            <li><kbd>Z</kbd> : Dance (<kbd>1</kbd> Purple · <kbd>2</kbd> Disco · <kbd>3</kbd> Honored One · <kbd>M</kbd> Mute)</li>
-            <li><kbd>S</kbd> / <kbd>↓</kbd> : Crouch/Slide · <kbd>E</kbd>/<kbd>K</kbd> : Dash · <kbd>F</kbd> : Flip · <kbd>R</kbd> : Reset</li>
+            <li><kbd>Z</kbd> : Dance (<kbd>1</kbd>–<kbd>3</kbd> outside Arena) · <kbd>E</kbd>/<kbd>K</kbd> Dash · <kbd>F</kbd> Flip · <kbd>R</kbd> Reset</li>
           </ul>
         </div>
         <div class="help-col">
@@ -152,7 +278,7 @@
         </div>
       </div>
       <div class="help-footer">
-        💡 Open <b>f(x)</b> in the top bar whenever you want to plot curves, view symbolic <b>f'(x)</b> &amp; <b>f''(x)</b>, shade <b>∫ f(x)dx</b>, and surf tangent slopes!
+        💡 Launch a vector <kbd>U</kbd>, chase with <kbd>Shift</kbd> &amp; catch it mid-air! Open <b>Arena</b> to fight math functions using <kbd>1</kbd> d/dx, <kbd>2</kbd> ∫dx, <kbd>3</kbd> -f(x), and <kbd>4</kbd> -v⃗/⊥.
       </div>
     </aside>
 
@@ -266,16 +392,18 @@
     </section>
   </div>
 
-  <script defer src="js/config.js?v=2.0.0"></script>
-  <script defer src="js/math-cas.js?v=2.0.0"></script>
-  <script defer src="js/functions.js?v=2.0.0"></script>
-  <script defer src="js/challenges.js?v=2.0.0"></script>
-  <script defer src="js/input.js?v=2.0.0"></script>
-  <script defer src="js/particles.js?v=2.0.0"></script>
-  <script defer src="js/glfx.js?v=2.0.0"></script>
-  <script defer src="js/audio-fx.js?v=2.0.0"></script>
-  <script defer src="js/grid.js?v=2.0.0"></script>
-  <script defer src="js/stickman.js?v=2.0.0"></script>
-  <script defer src="js/game.js?v=2.0.0"></script>
+  <script defer src="js/config.js?v=3.0.0"></script>
+  <script defer src="js/math-cas.js?v=3.0.0"></script>
+  <script defer src="js/functions.js?v=3.0.0"></script>
+  <script defer src="js/challenges.js?v=3.0.0"></script>
+  <script defer src="js/input.js?v=3.0.0"></script>
+  <script defer src="js/particles.js?v=3.0.0"></script>
+  <script defer src="js/glfx.js?v=3.0.0"></script>
+  <script defer src="js/audio-fx.js?v=3.0.0"></script>
+  <script defer src="js/grid.js?v=3.0.0"></script>
+  <script defer src="js/vectors.js?v=3.0.0"></script>
+  <script defer src="js/combat.js?v=3.0.0"></script>
+  <script defer src="js/stickman.js?v=3.0.0"></script>
+  <script defer src="js/game.js?v=3.0.0"></script>
 </body>
 </html>

@@ -30,7 +30,7 @@
       );
     }
 
-    spawnDust(wx, wy, vx, vy, radius = 0.055, life = 0.35) {
+    spawnDust(wx, wy, vx, vy, radius = 0.055, life = 0.35, floorY = 0.01) {
       if (this.particles.length >= 60) return;
       this.particles.push({
         x: wx,
@@ -40,21 +40,23 @@
         radius,
         life,
         maxLife: life,
+        floorY: wy < 0 ? wy - 0.04 : floorY,
       });
     }
 
-    spawnLandingBurst(wx, intensity = 1) {
+    spawnLandingBurst(wx, intensity = 1, wy = 0.02) {
       const count = Math.min(18, Math.max(4, Math.round(6 * intensity)));
       for (let i = 0; i < count; i++) {
         const dir = i % 2 === 0 ? 1 : -1;
         const speed = (0.65 + Math.random() * 1.55) * intensity;
         this.spawnDust(
           wx + (Math.random() - 0.5) * 0.16,
-          0.02,
+          wy,
           dir * speed,
           0.35 + Math.random() * 0.55 * Math.min(1.8, intensity),
           (0.04 + Math.random() * 0.035) * Math.min(1.5, 0.8 + intensity * 0.3),
-          0.26 + Math.random() * 0.22
+          0.26 + Math.random() * 0.22,
+          wy - 0.01
         );
       }
     }
@@ -157,7 +159,7 @@
         p.y += p.vy * dt;
         p.vx *= dampDust;
         p.vy -= 1.2 * dt;
-        if (p.y < 0.01) p.y = 0.01;
+        if (p.y < p.floorY) p.y = p.floorY;
       }
 
       for (let i = this.ghosts.length - 1; i >= 0; i--) {

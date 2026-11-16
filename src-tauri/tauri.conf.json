@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Stickman Cartesian Frame",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "identifier": "com.acmods.stickman-cartesian",
   "build": {
     "beforeBuildCommand": "npm run build",
@@ -11,7 +11,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Stickman · Orthonormal Cartesian Frame v2.0",
+        "title": "Stickman · Orthonormal Cartesian Frame v3.0",
         "width": 1280,
         "height": 800,
         "minWidth": 800,

@@ -105,6 +105,38 @@
       setTimeout(() => this.playTone(783.99, 0.22, 'triangle', 0.07, 1046.5), 130);
     }
 
+    playVectorLaunch() {
+      this.playTone(280, 0.14, 'triangle', 0.055, 620);
+    }
+
+    playVectorMount() {
+      this.playTone(440, 0.11, 'sine', 0.05, 660);
+    }
+
+    playChaslesAdd() {
+      this.playTone(392, 0.1, 'triangle', 0.05, 587.33);
+      setTimeout(() => this.playTone(587.33, 0.14, 'triangle', 0.055, 880), 55);
+    }
+
+    playWeaponFire(weaponIndex = 0) {
+      const baseFreqs = [480, 310, 560, 410];
+      const f = baseFreqs[weaponIndex % baseFreqs.length] || 440;
+      this.playTone(f, 0.085, weaponIndex === 1 ? 'sine' : 'triangle', 0.04, f * 1.35);
+    }
+
+    playMathHitRight() {
+      this.playTone(587.33, 0.1, 'sine', 0.055, 880);
+    }
+
+    playMathHitWrong() {
+      this.playTone(210, 0.15, 'sawtooth', 0.04, 130);
+    }
+
+    playEnemyDefeat() {
+      this.playTone(523.25, 0.09, 'triangle', 0.055, 783.99);
+      setTimeout(() => this.playTone(783.99, 0.14, 'triangle', 0.06, 1046.5), 55);
+    }
+
     _ensureSurfNodes(ctx) {
       if (this._surfOsc) return;
       const osc = ctx.createOscillator();

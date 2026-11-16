@@ -313,10 +313,14 @@
         let lo = a;
         let hi = b;
         let flo = fn(lo);
-        for (let iter = 0; iter < 8; iter++) {
+        const fhi = fn(hi);
+        if (Number.isFinite(flo) && Math.abs(flo) <= 1e-9) return lo;
+        if (Number.isFinite(fhi) && Math.abs(fhi) <= 1e-9) return hi;
+        for (let iter = 0; iter < 12; iter++) {
           const mid = (lo + hi) * 0.5;
           const fmid = fn(mid);
           if (!Number.isFinite(fmid)) return mid;
+          if (Math.abs(fmid) <= 1e-9) return mid;
           if (flo * fmid <= 0) {
             hi = mid;
           } else {
@@ -327,6 +331,8 @@
         return (lo + hi) * 0.5;
       };
 
+      const mergeTol = step * 1.25;
+
       for (let x = xMin + step; x <= xMax && markers.length < 24; x += step) {
         const y = this.evaluateY(x);
         const d1 = this.evaluateDeriv1(x);
@@ -336,7 +342,14 @@
             const rx = refineBisect((t) => this.evaluateY(t), prevX, x);
             const ry = this.evaluateY(rx);
             if (Number.isFinite(ry) && Math.abs(ry) < 0.15) {
-              markers.push({ kind: 'root', x: rx, y: 0 });
+              const dupRoot = markers.some(
+                (m) =>
+                  (m.kind === 'root' || m.kind === 'root-min' || m.kind === 'root-max') &&
+                  Math.abs(m.x - rx) < mergeTol
+              );
+              if (!dupRoot) {
+                markers.push({ kind: 'root', x: rx, y: 0 });
+              }
             }
           }
         }
@@ -347,11 +360,28 @@
             const cy = this.evaluateY(cx);
             const d2 = this.evaluateDeriv2(cx);
             if (Number.isFinite(cy)) {
-              markers.push({
-                kind: d2 < -0.05 ? 'max' : d2 > 0.05 ? 'min' : 'crit',
-                x: cx,
-                y: cy,
-              });
+              const touchesAxis = Math.abs(cy) < 0.015;
+              if (touchesAxis) {
+                const tangentKind = d2 < -0.05 ? 'root-max' : d2 > 0.05 ? 'root-min' : 'root';
+                const nearbyRootIdx = markers.findIndex(
+                  (m) =>
+                    (m.kind === 'root' || m.kind === 'root-min' || m.kind === 'root-max') &&
+                    Math.abs(m.x - cx) < mergeTol
+                );
+                if (nearbyRootIdx >= 0) {
+                  markers[nearbyRootIdx] = { kind: tangentKind, x: cx, y: 0 };
+                } else {
+                  markers.push({ kind: tangentKind, x: cx, y: 0 });
+                }
+              } else {
+                const kind = d2 < -0.05 ? 'max' : d2 > 0.05 ? 'min' : 'crit';
+                const dupCrit = markers.some(
+                  (m) => m.kind === kind && Math.abs(m.x - cx) < mergeTol
+                );
+                if (!dupCrit) {
+                  markers.push({ kind, x: cx, y: cy });
+                }
+              }
             }
           }
         }
@@ -474,6 +504,12 @@
         if (m.kind === 'root') {
           col = isBlack ? '#f472b6' : '#db2777';
           tag = 'root';
+        } else if (m.kind === 'root-max') {
+          col = isBlack ? '#f472b6' : '#db2777';
+          tag = 'root·max';
+        } else if (m.kind === 'root-min') {
+          col = isBlack ? '#f472b6' : '#db2777';
+          tag = 'root·min';
         } else if (m.kind === 'max') {
           col = isBlack ? '#4ade80' : '#059669';
           tag = 'max';
@@ -493,8 +529,9 @@
 
         ctx.fillStyle = col;
         ctx.textAlign = 'center';
-        ctx.textBaseline = m.kind === 'min' ? 'top' : 'bottom';
-        const dyOff = m.kind === 'min' ? 8 : -8;
+        const placeBelow = m.kind === 'min' || m.kind === 'root-max';
+        ctx.textBaseline = placeBelow ? 'top' : 'bottom';
+        const dyOff = placeBelow ? 8 : -8;
         ctx.fillText(`${tag}(${m.x.toFixed(2)}, ${m.y.toFixed(2)})`, sp.x, sp.y + dyOff);
       }
       ctx.restore();

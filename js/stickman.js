@@ -9,6 +9,8 @@
       this.particles = particles;
       this.functionPlotter = functionPlotter;
       this.vectorSystem = vectorSystem;
+      this.combat = null;
+      this.characterStyle = 'gojo';
       this._glowSprites = new Map();
       this._scarfPtsX = new Float64Array(8);
       this._scarfPtsY = new Float64Array(8);
@@ -18,6 +20,48 @@
 
     setVectorSystem(vectorSystem) {
       this.vectorSystem = vectorSystem || null;
+    }
+
+    setCombatArena(combat) {
+      this.combat = combat || null;
+    }
+
+    getCharacterStyleSpec() {
+      const styles = MathStickGame.CHARACTER_STYLES || {};
+      return (
+        styles[this.characterStyle] ||
+        styles.gojo || {
+          id: 'gojo',
+          label: 'Infinity',
+          nameAr: 'الغامض (Gojo)',
+          auraStyle: 'cyan',
+          accentBlack: '#38bdf8',
+          accentLight: '#2563eb',
+          eyeColor: '#7dd3fc',
+          coatBlack: '#0b101d',
+          coatLight: '#0f172a',
+          scarfBlack: '#38bdf8',
+          scarfLight: '#2563eb',
+        }
+      );
+    }
+
+    setCharacterStyle(id) {
+      const styles = MathStickGame.CHARACTER_STYLES || {};
+      if (styles[id]) {
+        this.characterStyle = id;
+        this.glFlashTimer = Math.max(this.glFlashTimer || 0, 0.24);
+      }
+      return this.characterStyle;
+    }
+
+    cycleCharacterStyle() {
+      const styles = MathStickGame.CHARACTER_STYLES || {};
+      const keys = Object.keys(styles);
+      if (keys.length === 0) return this.characterStyle;
+      const idx = Math.max(0, keys.indexOf(this.characterStyle));
+      const nextKey = keys[(idx + 1) % keys.length];
+      return this.setCharacterStyle(nextKey);
     }
 
     _resetScarf(nx, ny) {
@@ -77,6 +121,19 @@
       this.flipDuration = 0.45;
       this.flipDir = 1;
 
+      // Vector Spear Throw animation state
+      this.glFlashTimer = 0;
+      this.throwState = {
+        active: false,
+        timer: 0,
+        duration: CONFIG.VEC_THROW_DURATION,
+        windup: CONFIG.VEC_THROW_WINDUP,
+        ux: CONFIG.VEC_DEFAULT_UX,
+        uy: CONFIG.VEC_DEFAULT_UY,
+        released: false,
+        onRelease: null,
+      };
+
       this.landSquash = 0;
       this.idleTime = 0;
       this.gaitPhase = 0;
@@ -110,6 +167,56 @@
       this._resetScarf(x, y + 1.48);
     }
 
+    startVectorThrow(ux, uy, onRelease = null) {
+      // Mid-ride throws immediately trigger Chasles vector addition
+      if (this.ridingVector) {
+        this.glFlashTimer = 0.22;
+        const hand =
+          this.lastPose && this.lastPose.frontHand
+            ? this.lastPose.frontHand
+            : { x: this.x + this.facing * 0.4, y: this.y + 1.05 };
+        if (typeof onRelease === 'function') {
+          onRelease(hand.x, hand.y);
+        }
+        return;
+      }
+
+      if (Math.abs(ux) > 0.15) {
+        this.facing = Math.sign(ux);
+      }
+      if (this.dancing) {
+        this.dancing = false;
+        this.danceFx = null;
+      }
+
+      if (
+        this.throwState.active &&
+        !this.throwState.released &&
+        typeof this.throwState.onRelease === 'function'
+      ) {
+        this.throwState.released = true;
+        const oldHand =
+          this.lastPose && this.lastPose.frontHand
+            ? this.lastPose.frontHand
+            : { x: this.x + this.facing * 0.42, y: this.y + 1.08 };
+        const prevCb = this.throwState.onRelease;
+        this.throwState.onRelease = null;
+        prevCb(oldHand.x, oldHand.y);
+      }
+
+      this.throwState = {
+        active: true,
+        timer: 0,
+        duration: CONFIG.VEC_THROW_DURATION,
+        windup: CONFIG.VEC_THROW_WINDUP,
+        ux: Number.isFinite(ux) ? ux : this.facing * CONFIG.VEC_DEFAULT_UX,
+        uy: Number.isFinite(uy) ? uy : CONFIG.VEC_DEFAULT_UY,
+        released: false,
+        onRelease: typeof onRelease === 'function' ? onRelease : null,
+      };
+      this.glFlashTimer = 0.2;
+    }
+
     mountVector(vector, s = 0.5) {
       if (!vector) return;
       this.ridingVector = vector;
@@ -136,7 +243,7 @@
       const slopeAng = vector.ux >= 0
         ? Math.atan2(vector.uy, Math.max(1e-4, vector.ux))
         : Math.atan2(-vector.uy, Math.max(1e-4, -vector.ux));
-      this.curveSlopeAngle = utils.clamp(slopeAng, -1.1, 1.1);
+      this.curveSlopeAngle = utils.clamp(slopeAng, -1.05, 1.05);
       if (this.vectorSystem) {
         this.vectorSystem.onMount(vector);
       }
@@ -170,10 +277,13 @@
 
     getStateLabel() {
       if (this.dashTimer > 0) return 'Dash';
-      if (this.ridingVector) return 'Vector Ride';
+      if (this.ridingVector) {
+        return (this.ridingVector.speedMult || 1) > 1.55 ? 'Vector Overdrive' : 'Vector Ride';
+      }
       if (this.surfingCurve) return 'Curve Surf';
       if (this.climbing) return 'Climbing';
       if (this.flipTimer > 0) return 'Flip';
+      if (this.throwState.active) return 'Vector Throw';
       if (this.isFreeFalling()) {
         if (this.freeFallDive) return 'Dive';
         if (this.freeFallBrake) return 'Air Brake';
@@ -211,6 +321,27 @@
       this.damageFlashTimer = Math.max(0, this.damageFlashTimer - dt);
       this.heavyLandTimer = Math.max(0, this.heavyLandTimer - dt);
       this.landSquash = Math.max(0, this.landSquash - dt * 4.2);
+      this.glFlashTimer = Math.max(0, this.glFlashTimer - dt);
+
+      if (this.throwState.active) {
+        this.throwState.timer += dt;
+        if (!this.throwState.released && this.throwState.timer >= this.throwState.windup) {
+          this.throwState.released = true;
+          this.lastPose = this.computePose();
+          const hand =
+            this.lastPose && this.lastPose.frontHand
+              ? this.lastPose.frontHand
+              : { x: this.x + this.facing * 0.44, y: this.y + 1.08 };
+          if (typeof this.throwState.onRelease === 'function') {
+            const cb = this.throwState.onRelease;
+            this.throwState.onRelease = null;
+            cb(hand.x, hand.y);
+          }
+        }
+        if (this.throwState.timer >= this.throwState.duration) {
+          this.throwState.active = false;
+        }
+      }
 
       if (this.flipTimer > 0) {
         this.flipTimer = Math.max(0, this.flipTimer - dt);
@@ -1031,7 +1162,7 @@
       const v = this.ridingVector;
       if (!v) return false;
 
-      if (input.jumpPressed) {
+      if (input.spacePressed) {
         const walkDir = Math.abs(input.moveX) > 0.1 ? Math.sign(input.moveX) : 0;
         if (input.crouchHeld || input.climbDownHeld) {
           this.dropThroughTimer = 0.25;
@@ -1041,9 +1172,9 @@
           this.jumpsRemaining = 1;
           return 'handled';
         }
-        // Jump with Galilean vector velocity composition: V_vec + jump impulse
+        // Vault off with Galilean vector velocity composition: V_vec + jump impulse
         this.dismountVector(false);
-        this.vx = v.vx + walkDir * (input.sprint ? 3.4 : 2.1);
+        this.vx = v.vx + walkDir * (input.sprint ? 3.8 : 2.2);
         this.vy = Math.max(CONFIG.JUMP_VEL, v.vy + CONFIG.JUMP_VEL * 0.72);
         this.grounded = false;
         this.coyoteTimer = 0;
@@ -1081,19 +1212,39 @@
         return 'handled';
       }
 
-      // Walk/sprint along vector shaft: V_total = V_vector + V_player_rel
+      // Smooth 360-degree steering (W/S/A/D or Arrows) and Overdrive boost (Shift)
+      const sAnchor = this.vectorParam || 0.5;
+      const preX = v.ax + v.ux * sAnchor;
+      const preY = v.ay + v.uy * sAnchor;
+      const steerY = input.steerY || 0;
+      const moveX = input.moveX || 0;
+      if (this.vectorSystem && typeof this.vectorSystem.steerAndThrottle === 'function') {
+        this.vectorSystem.steerAndThrottle(v, steerY, moveX, Boolean(input.sprint), dt);
+      }
+      // Pivot vector cleanly around the rider's hoverboard stance so steering has zero radial snap
+      v.ax = preX - v.ux * sAnchor;
+      v.ay = preY - v.uy * sAnchor;
+      const riderAnchorY = v.ay + v.uy * sAnchor;
+      if (riderAnchorY >= -0.35 && riderAnchorY < 0.14 && v.vy < 0) {
+        v.ay += 0.14 - riderAnchorY;
+      }
+
+      // Shift surfer balance smoothly along shaft while banking: V_total = V_vector + V_player_rel
       let relVx = 0;
       let relVy = 0;
       const len = Math.max(0.5, v.norm || Math.hypot(v.ux, v.uy));
-      if (Math.abs(input.moveX) > 0.05) {
-        const moveSignX = Math.sign(input.moveX);
+      if (Math.abs(moveX) > 0.05) {
+        const moveSignX = Math.sign(moveX);
         this.facing = moveSignX;
         const alignSign = Math.abs(v.ux) >= 0.22 ? moveSignX * Math.sign(v.ux) : moveSignX;
-        const walkSpd = CONFIG.VEC_SHAFT_WALK_SPEED * (input.sprint ? 1.55 : 1.0);
+        const walkSpd = CONFIG.VEC_SHAFT_WALK_SPEED * (input.sprint ? 1.45 : 0.95);
         const ds = (alignSign * walkSpd * dt) / len;
-        this.vectorParam = utils.clamp(this.vectorParam + ds, 0.05, 0.95);
-        relVx = (alignSign * walkSpd * v.ux) / len;
-        relVy = (alignSign * walkSpd * v.uy) / len;
+        this.vectorParam = utils.clamp(this.vectorParam + ds, 0.12, 0.88);
+        relVx = (alignSign * walkSpd * v.ux * 0.45) / len;
+        relVy = (alignSign * walkSpd * v.uy * 0.45) / len;
+      } else {
+        if (Math.abs(v.vx) > 0.25) this.facing = Math.sign(v.vx);
+        this.vectorParam = utils.damp(this.vectorParam, 0.52, 2.2, dt);
       }
 
       this.x = v.ax + v.ux * this.vectorParam;
@@ -1103,7 +1254,7 @@
       const slopeAng = v.ux >= 0
         ? Math.atan2(v.uy, Math.max(1e-4, v.ux))
         : Math.atan2(-v.uy, Math.max(1e-4, -v.ux));
-      this.curveSlopeAngle = utils.clamp(slopeAng, -1.1, 1.1);
+      this.curveSlopeAngle = utils.clamp(slopeAng, -1.05, 1.05);
       this.curveSpeed = Math.hypot(this.vx, this.vy);
       this.crouching = input.crouchHeld;
       this.grounded = true;
@@ -1111,15 +1262,24 @@
       this.coyoteTimer = CONFIG.COYOTE_TIME;
       this.jumpsRemaining = 2;
 
-      if (Math.random() < dt * 9) {
+      const isOverdrive = (v.speedMult || 1) > 1.55;
+      if (isOverdrive) {
+        this.glFlashTimer = Math.max(this.glFlashTimer, 0.1);
+        if (Math.random() < dt * 14) {
+          this.particles.spawnWindStreak(this.x, this.y + 0.85, Math.hypot(this.vx, this.vy) * 0.8);
+        }
+      }
+
+      if (Math.random() < dt * (isOverdrive ? 20 : 10)) {
+        const spec = this.getCharacterStyleSpec();
         this.particles.spawnSpark(
-          this.x - (v.vx * 0.03),
+          this.x - v.vx * 0.03,
           this.y + 0.02,
-          -v.vx * 0.25 + (Math.random() - 0.5) * 0.7,
-          0.2 + Math.random() * 0.6,
-          '#34d399',
-          0.025,
-          0.24
+          -v.vx * 0.25 + (Math.random() - 0.5) * 0.8,
+          0.15 + Math.random() * 0.6,
+          isOverdrive ? (spec.accentBlack || '#38bdf8') : '#34d399',
+          0.028,
+          0.26
         );
       }
 
@@ -1323,6 +1483,9 @@
       } else if (this.dashTimer > 0) {
         windX = -this.facing * 5.2;
         windY = 0.25;
+      } else if (this.ridingVector) {
+        windX = -this.vx * 0.72 - this.facing * 0.65;
+        windY = -this.vy * 0.52 + 0.15;
       }
 
       for (let i = 1; i < chain.length; i++) {
@@ -2065,16 +2228,284 @@
     }
 
     computePose() {
+      let pose;
       if (this.surfingCurve || this.ridingVector) {
-        return this._computeSurfPose();
+        pose = this._computeSurfPose();
+      } else if (this.climbing) {
+        pose = this._computeClimbPose();
+      } else if (this.dancing) {
+        pose = this._computeDancePose();
+      } else {
+        pose = this._computeLocomotionPose();
       }
-      if (this.climbing) {
-        return this._computeClimbPose();
-      }
-      if (this.dancing) {
-        return this._computeDancePose();
+      return this._finalizePose(pose);
+    }
+
+    _finalizePose(pose) {
+      if (!pose) return pose;
+      const spec = this.getCharacterStyleSpec();
+      pose.styleId = spec.id;
+
+      if (!this.dancing) {
+        pose.coatStyle = Boolean(spec.coatBlack || spec.coatLight);
+      } else if (pose.coatStyle === undefined) {
+        pose.coatStyle = Boolean(spec.coatBlack || spec.coatLight);
       }
 
+      const highIntensity =
+        this.dashTimer > 0 ||
+        this.glFlashTimer > 0 ||
+        Boolean(this.ridingVector) ||
+        Boolean(this.surfingCurve) ||
+        Boolean(this.combat && this.combat.active);
+
+      if (!pose.auraStyle) {
+        if (highIntensity || spec.id !== 'animator') {
+          pose.auraStyle = spec.auraStyle || 'cyan';
+          pose.auraSoft = !highIntensity;
+        }
+      }
+      if (!pose.eyeColorOverride && spec.eyeColor) {
+        pose.eyeColorOverride = spec.eyeColor;
+        if (spec.eyeColorAlt) pose.eyeColorAlt = spec.eyeColorAlt;
+      }
+
+      if (!this.dancing) {
+        if (this.throwState && this.throwState.active) {
+          this._applyThrowPose(pose);
+        } else if (this.combat && this.combat.active) {
+          pose.combatWeapon = this.combat.getActiveWeapon();
+          pose.parrying = this.combat.parryTimer > 0;
+          if (this.combat.attackState && this.combat.attackState.active) {
+            this._applyCombatPose(pose, this.combat.attackState);
+          } else if (this.combat.parryTimer > 0) {
+            this._applyParryPose(pose);
+          }
+        }
+      }
+
+      return pose;
+    }
+
+    _applyThrowPose(pose) {
+      const st = this.throwState;
+      const f = Math.abs(st.ux) > 0.12 ? Math.sign(st.ux) : pose.facing || 1;
+      pose.facing = f;
+      const sh = pose.frontShoulder || pose.shoulder;
+      const bsh = pose.backShoulder || pose.shoulder;
+      const aimAng = Math.atan2(st.uy, st.ux);
+      const t = st.timer;
+      const windup = Math.max(0.02, st.windup);
+      const dur = Math.max(windup + 0.05, st.duration);
+
+      const coilAng = aimAng + f * 2.25;
+      let armAng = aimAng;
+      let reach = 0.52;
+
+      const peakWind = windup * 0.65;
+      if (t < peakWind) {
+        const p = utils.clamp(t / peakWind, 0, 1);
+        armAng = utils.lerp(aimAng + f * 0.4, coilAng, p * p);
+        reach = utils.lerp(0.42, 0.48, p);
+      } else if (t < windup) {
+        const p = utils.clamp((t - peakWind) / (windup - peakWind), 0, 1);
+        armAng = utils.lerp(coilAng, aimAng, p);
+        reach = utils.lerp(0.48, 0.54, p);
+      } else {
+        const p = utils.clamp((t - windup) / (dur - windup), 0, 1);
+        const follow = 1 - Math.pow(1 - p, 2);
+        armAng = aimAng - f * 0.48 * follow;
+        reach = utils.lerp(0.54, 0.46, p);
+      }
+
+      const hx = sh.x + Math.cos(armAng) * reach;
+      const hy = sh.y + Math.sin(armAng) * reach;
+      const arm1 = this._solveTwoBoneIK(
+        sh.x,
+        sh.y,
+        hx,
+        hy,
+        CONFIG.UPPER_ARM_LEN,
+        CONFIG.FOREARM_LEN,
+        -f
+      );
+      pose.frontElbow = { x: arm1.jx, y: arm1.jy };
+      pose.frontHand = { x: arm1.ex, y: arm1.ey };
+
+      // Off-hand sights & counterbalances the throw along target line
+      const guideReach = t < windup ? 0.42 : 0.24;
+      const gx = bsh.x + Math.cos(aimAng) * guideReach;
+      const gy = bsh.y + Math.sin(aimAng) * guideReach - 0.05;
+      const arm2 = this._solveTwoBoneIK(
+        bsh.x,
+        bsh.y,
+        gx,
+        gy,
+        CONFIG.UPPER_ARM_LEN,
+        CONFIG.FOREARM_LEN,
+        f
+      );
+      pose.backElbow = { x: arm2.jx, y: arm2.jy };
+      pose.backHand = { x: arm2.ex, y: arm2.ey };
+
+      if (!st.released) {
+        pose.throwingSpear = {
+          angle: aimAng,
+          ux: st.ux,
+          uy: st.uy,
+        };
+      }
+    }
+
+    _applyParryPose(pose) {
+      const f = pose.facing || 1;
+      const sh = pose.frontShoulder || pose.shoulder;
+      const bsh = pose.backShoulder || pose.shoulder;
+
+      const guard1 = this._solveTwoBoneIK(
+        sh.x,
+        sh.y,
+        sh.x + f * 0.34,
+        sh.y + 0.14,
+        CONFIG.UPPER_ARM_LEN,
+        CONFIG.FOREARM_LEN,
+        -f
+      );
+      pose.frontElbow = { x: guard1.jx, y: guard1.jy };
+      pose.frontHand = { x: guard1.ex, y: guard1.ey };
+
+      const guard2 = this._solveTwoBoneIK(
+        bsh.x,
+        bsh.y,
+        bsh.x + f * 0.24,
+        bsh.y - 0.04,
+        CONFIG.UPPER_ARM_LEN,
+        CONFIG.FOREARM_LEN,
+        -f
+      );
+      pose.backElbow = { x: guard2.jx, y: guard2.jy };
+      pose.backHand = { x: guard2.ex, y: guard2.ey };
+
+      pose.weaponWorldAngle = f > 0 ? 1.08 : Math.PI - 1.08;
+    }
+
+    _applyCombatPose(pose, atk) {
+      const f = pose.facing || 1;
+      const sh = pose.frontShoulder || pose.shoulder;
+      const bsh = pose.backShoulder || pose.shoulder;
+      const p = utils.clamp(atk.timer / Math.max(0.05, atk.duration), 0, 1);
+      const ease = 1 - Math.pow(1 - p, 3);
+      const aim = atk.aimAngle || 0;
+
+      if (atk.isSlam) {
+        // Vertical meteor plunge grip
+        const arm1 = this._solveTwoBoneIK(
+          sh.x,
+          sh.y,
+          sh.x + f * 0.14,
+          sh.y - 0.44,
+          CONFIG.UPPER_ARM_LEN,
+          CONFIG.FOREARM_LEN,
+          -f
+        );
+        const arm2 = this._solveTwoBoneIK(
+          bsh.x,
+          bsh.y,
+          bsh.x + f * 0.06,
+          bsh.y - 0.42,
+          CONFIG.UPPER_ARM_LEN,
+          CONFIG.FOREARM_LEN,
+          f
+        );
+        pose.frontElbow = { x: arm1.jx, y: arm1.jy };
+        pose.frontHand = { x: arm1.ex, y: arm1.ey };
+        pose.backElbow = { x: arm2.jx, y: arm2.jy };
+        pose.backHand = { x: arm2.ex, y: arm2.ey };
+        pose.weaponWorldAngle = -Math.PI * 0.5;
+        return;
+      }
+
+      if (atk.weaponIdx === 3) {
+        // Spear piston thrust along aim!
+        const thrustDist =
+          p < 0.2
+            ? utils.lerp(0.14, 0.06, p / 0.2)
+            : p < 0.65
+              ? utils.lerp(0.06, 0.56, (p - 0.2) / 0.45)
+              : utils.lerp(0.56, 0.36, (p - 0.65) / 0.35);
+        const tx = sh.x + Math.cos(aim) * thrustDist;
+        const ty = sh.y + Math.sin(aim) * thrustDist;
+        const arm1 = this._solveTwoBoneIK(
+          sh.x,
+          sh.y,
+          tx,
+          ty,
+          CONFIG.UPPER_ARM_LEN,
+          CONFIG.FOREARM_LEN,
+          -f
+        );
+        pose.frontElbow = { x: arm1.jx, y: arm1.jy };
+        pose.frontHand = { x: arm1.ex, y: arm1.ey };
+        pose.weaponWorldAngle = aim;
+        return;
+      }
+
+      let sweepStart = aim + f * 1.45;
+      let sweepEnd = aim - f * 1.05;
+      if (atk.comboStep === 1) {
+        sweepStart = aim - f * 1.25;
+        sweepEnd = aim + f * 1.25;
+      } else if (atk.comboStep === 2) {
+        sweepStart = aim + f * 1.85;
+        sweepEnd = aim - f * 1.3;
+      }
+      const swingAng = utils.lerp(sweepStart, sweepEnd, ease);
+      const tx = sh.x + Math.cos(swingAng) * 0.5;
+      const ty = sh.y + Math.sin(swingAng) * 0.5;
+      const arm1 = this._solveTwoBoneIK(
+        sh.x,
+        sh.y,
+        tx,
+        ty,
+        CONFIG.UPPER_ARM_LEN,
+        CONFIG.FOREARM_LEN,
+        -f
+      );
+      pose.frontElbow = { x: arm1.jx, y: arm1.jy };
+      pose.frontHand = { x: arm1.ex, y: arm1.ey };
+      pose.weaponWorldAngle = swingAng;
+
+      // Twin blades off-hand counter-slash or broadsword 2-hand grip
+      if (atk.weaponIdx === 2) {
+        const offAng = utils.lerp(sweepEnd * 0.85, sweepStart * 0.85, ease);
+        const arm2 = this._solveTwoBoneIK(
+          bsh.x,
+          bsh.y,
+          bsh.x + Math.cos(offAng) * 0.44,
+          bsh.y + Math.sin(offAng) * 0.44,
+          CONFIG.UPPER_ARM_LEN,
+          CONFIG.FOREARM_LEN,
+          f
+        );
+        pose.backElbow = { x: arm2.jx, y: arm2.jy };
+        pose.backHand = { x: arm2.ex, y: arm2.ey };
+        pose.offWeaponWorldAngle = offAng;
+      } else if (atk.weaponIdx === 1) {
+        const arm2 = this._solveTwoBoneIK(
+          bsh.x,
+          bsh.y,
+          arm1.ex - Math.cos(swingAng) * 0.08,
+          arm1.ey - Math.sin(swingAng) * 0.08,
+          CONFIG.UPPER_ARM_LEN,
+          CONFIG.FOREARM_LEN,
+          f
+        );
+        pose.backElbow = { x: arm2.jx, y: arm2.jy };
+        pose.backHand = { x: arm2.ex, y: arm2.ey };
+      }
+    }
+
+    _computeLocomotionPose() {
       const f = this.facing;
       const speed = Math.abs(this.vx);
       const walkBlend = utils.clamp(speed / 0.45, 0, 1);
@@ -2305,8 +2736,6 @@
       const footLen = CONFIG.FOOT_LEN;
       const pose = {
         facing: f,
-        auraStyle: this.dashTimer > 0 ? 'cyan' : null,
-        coatStyle: true,
         hip: { x: hipX, y: hipY },
         shoulder: { x: shoulderX, y: shoulderY },
         neck: { x: neckX, y: neckY },
@@ -2505,12 +2934,343 @@
       ctx.restore();
     }
 
+    _drawHakamaLeg(ctx, p1, p2, p3, p4, width, clothColor, shoeColor, rimColor, gridRenderer, camera, isBack) {
+      const hw = gridRenderer.width * 0.5;
+      const hh = gridRenderer.height * 0.5;
+      const cx = camera.x;
+      const cy = camera.y;
+      const ppu = camera.ppu;
+
+      const x1 = hw + (p1.x - cx) * ppu;
+      const y1 = hh - (p1.y - cy) * ppu;
+      const x2 = hw + (p2.x - cx) * ppu;
+      const y2 = hh - (p2.y - cy) * ppu;
+      const x3 = hw + (p3.x - cx) * ppu;
+      const y3 = hh - (p3.y - cy) * ppu;
+
+      const rRoot = width * 1.05;
+      const rKnee = width * 1.48;
+      const rAnkle = width * 1.24;
+
+      ctx.fillStyle = clothColor;
+      this._drawTaperedSegment(ctx, x1, y1, x2, y2, rRoot, rKnee);
+      this._drawTaperedSegment(ctx, x2, y2, x3, y3, rKnee, rAnkle);
+
+      if (rimColor) {
+        ctx.save();
+        ctx.strokeStyle = rimColor;
+        ctx.globalAlpha *= isBack ? 0.35 : 0.65;
+        ctx.lineWidth = Math.max(1.1, ppu * 0.018);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.lineTo(x3, y3);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      if (p4) {
+        const x4 = hw + (p4.x - cx) * ppu;
+        const y4 = hh - (p4.y - cy) * ppu;
+        const fdx = x4 - x3;
+        const fdy = y4 - y3;
+        const flen = Math.hypot(fdx, fdy) || 1;
+        const fnx = -fdy / flen;
+        const fny = fdx / flen;
+        const rTip = width * 0.42;
+        ctx.fillStyle = shoeColor;
+        ctx.beginPath();
+        ctx.arc(x3, y3, rTip * 1.15, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(x3 + fnx * rTip * 1.05, y3 + fny * rTip * 1.05);
+        ctx.lineTo(x4 + (fdx / flen) * rTip * 0.6, y4 + (fdy / flen) * rTip * 0.6);
+        ctx.lineTo(x3 - fnx * rTip * 0.9, y3 - fny * rTip * 0.9);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    _drawHairSpikes(ctx, sHeadX, sHeadY, sNkX, sNkY, headPx, pose, spec, primaryColor, accentColor, isBlack) {
+      if (!spec || !spec.hairColor) return;
+      const f = pose.facing || 1;
+      let upX = sHeadX - sNkX;
+      let upY = sHeadY - sNkY;
+      const upLen = Math.hypot(upX, upY);
+      if (upLen > 1) {
+        upX /= upLen;
+        upY /= upLen;
+      } else {
+        upX = 0;
+        upY = -1;
+      }
+      // Forward axis orthogonal to head's upward vector
+      const rx = -upY * f;
+      const ry = upX * f;
+      const windPush = utils.clamp(-this.vx * f * 0.04, -0.35, 0.45) + 0.08 * Math.sin(this.idleTime * 7.5);
+
+      const drawSpike = (baseFwd, baseUp, tipFwd, tipUp, halfW, fillCol, tipAccent = null) => {
+        const bCx = sHeadX + (rx * baseFwd + upX * baseUp) * headPx;
+        const bCy = sHeadY + (ry * baseFwd + upY * baseUp) * headPx;
+        const tX = sHeadX + (rx * (tipFwd - windPush * 0.35) + upX * tipUp) * headPx;
+        const tY = sHeadY + (ry * (tipFwd - windPush * 0.35) + upY * tipUp) * headPx;
+        ctx.fillStyle = fillCol;
+        ctx.beginPath();
+        ctx.moveTo(bCx - upX * halfW * headPx * 0.5 + rx * halfW * headPx * 0.65, bCy - upY * halfW * headPx * 0.5 + ry * halfW * headPx * 0.65);
+        ctx.lineTo(tX, tY);
+        ctx.lineTo(bCx + upX * halfW * headPx * 0.5 - rx * halfW * headPx * 0.65, bCy + upY * halfW * headPx * 0.5 - ry * halfW * headPx * 0.65);
+        ctx.closePath();
+        ctx.fill();
+        if (tipAccent) {
+          ctx.strokeStyle = tipAccent;
+          ctx.lineWidth = Math.max(1.0, headPx * 0.11);
+          ctx.beginPath();
+          ctx.moveTo((bCx + tX) * 0.5, (bCy + tY) * 0.5);
+          ctx.lineTo(tX, tY);
+          ctx.stroke();
+        }
+      };
+
+      ctx.save();
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      const darkRim = isBlack ? '#64748b' : '#0f172a';
+
+      if (spec.id === 'gojo') {
+        // Gojo Satoru layered spiky white crown
+        drawSpike(-0.62, 0.55, -1.38, 0.92, 0.44, spec.hairTipColor || '#94a3b8');
+        drawSpike(-0.25, 0.78, -0.78, 1.56, 0.48, spec.hairColor);
+        drawSpike(0.15, 0.82, -0.18, 1.72, 0.52, spec.hairColor, '#e0f2fe');
+        drawSpike(0.55, 0.66, 0.52, 1.5, 0.44, spec.hairColor);
+        drawSpike(0.78, 0.35, 1.15, 0.88, 0.34, spec.hairTipColor || '#cbd5e1');
+      } else if (spec.id === 'toji') {
+        // Toji Fushiguro sharp dark swept locks + iconic forehead bang
+        const fillC = isBlack ? '#1e293b' : '#09090b';
+        drawSpike(-0.68, 0.42, -1.42, 0.65, 0.4, fillC, darkRim);
+        drawSpike(-0.2, 0.78, -0.78, 1.24, 0.48, fillC, darkRim);
+        drawSpike(0.26, 0.76, -0.18, 1.28, 0.46, fillC, darkRim);
+        drawSpike(0.66, 0.52, 1.08, 0.25, 0.3, fillC, '#34d399');
+        drawSpike(0.75, 0.25, 0.96, -0.18, 0.22, fillC, '#34d399');
+      } else if (spec.id === 'benimaru') {
+        // Benimaru Shinmon spiky black warrior hair with crimson flame tips
+        const fillC = isBlack ? '#1e1b26' : '#18181b';
+        drawSpike(-0.66, 0.45, -1.48, 0.85, 0.44, fillC, spec.hairTipColor || '#ef4444');
+        drawSpike(-0.22, 0.76, -0.82, 1.48, 0.48, fillC, spec.hairTipColor || '#ef4444');
+        drawSpike(0.2, 0.82, 0.02, 1.58, 0.5, fillC, '#fb7185');
+        drawSpike(0.62, 0.62, 1.05, 1.05, 0.38, fillC, '#fde047');
+        drawSpike(0.78, 0.28, 1.04, 0.08, 0.26, fillC, spec.hairTipColor || '#ef4444');
+      }
+
+      ctx.restore();
+    }
+
+    _drawThrowSpear(ctx, handWorld, spearInfo, camera, gridRenderer, theme) {
+      const sp = gridRenderer.worldToScreen(handWorld.x, handWorld.y, camera);
+      const ppu = camera.ppu;
+      const lenPx = Math.max(36, ppu * 0.95);
+      const col = (theme && theme.vecLaunched) || '#f59e0b';
+      const screenAng = -spearInfo.angle;
+
+      ctx.save();
+      ctx.translate(sp.x, sp.y);
+      ctx.rotate(screenAng);
+
+      // Halo glow around condensed thrown vector spear
+      ctx.strokeStyle = col;
+      ctx.globalAlpha = 0.36;
+      ctx.lineWidth = Math.max(7, ppu * 0.14);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-lenPx * 0.48, 0);
+      ctx.lineTo(lenPx * 0.65, 0);
+      ctx.stroke();
+
+      ctx.globalAlpha = 0.98;
+      ctx.lineWidth = Math.max(3, ppu * 0.052);
+      ctx.beginPath();
+      ctx.moveTo(-lenPx * 0.48, 0);
+      ctx.lineTo(lenPx * 0.62, 0);
+      ctx.stroke();
+
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(1.2, ppu * 0.02);
+      ctx.beginPath();
+      ctx.moveTo(-lenPx * 0.42, 0);
+      ctx.lineTo(lenPx * 0.6, 0);
+      ctx.stroke();
+
+      // Razor arrowhead at tip
+      const headS = Math.max(9, ppu * 0.16);
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.moveTo(lenPx * 0.72, 0);
+      ctx.lineTo(lenPx * 0.46, -headS * 0.42);
+      ctx.lineTo(lenPx * 0.54, 0);
+      ctx.lineTo(lenPx * 0.46, headS * 0.42);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    _drawHeldWeapon(ctx, handWorld, worldAngle, weaponSpec, camera, gridRenderer, isBlack, isOffhand = false) {
+      if (!handWorld || !weaponSpec) return;
+      const sp = gridRenderer.worldToScreen(handWorld.x, handWorld.y, camera);
+      const ppu = camera.ppu;
+      const col = isBlack ? weaponSpec.colorBlack : weaponSpec.colorLight;
+      const screenAng = -worldAngle;
+      const scale = isOffhand ? 0.82 : 1.0;
+
+      ctx.save();
+      ctx.translate(sp.x, sp.y);
+      ctx.rotate(screenAng);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      if (weaponSpec.id === 'diff') {
+        // Holographic Differential Katana (d/dx)
+        const bladeLen = Math.max(30, ppu * 0.86 * scale);
+        ctx.strokeStyle = col;
+        ctx.globalAlpha = 0.34;
+        ctx.lineWidth = Math.max(6, ppu * 0.11);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(bladeLen * 0.55, -bladeLen * 0.08, bladeLen, -bladeLen * 0.03);
+        ctx.stroke();
+
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = col;
+        ctx.lineWidth = Math.max(3, ppu * 0.048);
+        ctx.stroke();
+
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = Math.max(1.3, ppu * 0.02);
+        ctx.beginPath();
+        ctx.moveTo(bladeLen * 0.08, -0.5);
+        ctx.quadraticCurveTo(bladeLen * 0.55, -bladeLen * 0.08, bladeLen, -bladeLen * 0.03);
+        ctx.stroke();
+
+        // Handle & Tsuba handguard
+        ctx.strokeStyle = isBlack ? '#cbd5e1' : '#334155';
+        ctx.lineWidth = Math.max(2.4, ppu * 0.045);
+        ctx.beginPath();
+        ctx.moveTo(-bladeLen * 0.2, 0);
+        ctx.lineTo(0, 0);
+        ctx.moveTo(1, -ppu * 0.07);
+        ctx.lineTo(1, ppu * 0.07);
+        ctx.stroke();
+      } else if (weaponSpec.id === 'integ') {
+        // Heavy Integral Broadsword (∫ dx)
+        const bladeLen = Math.max(34, ppu * 0.96 * scale);
+        const halfW = Math.max(3.5, ppu * 0.068);
+        ctx.fillStyle = col;
+        ctx.globalAlpha = 0.28;
+        ctx.beginPath();
+        ctx.ellipse(bladeLen * 0.48, 0, bladeLen * 0.55, halfW * 1.9, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = col;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = Math.max(1.1, ppu * 0.018);
+        ctx.beginPath();
+        ctx.moveTo(0, -halfW * 0.72);
+        ctx.lineTo(bladeLen * 0.82, -halfW);
+        ctx.lineTo(bladeLen, 0);
+        ctx.lineTo(bladeLen * 0.82, halfW);
+        ctx.lineTo(0, halfW * 0.72);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Crossguard & pommel
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = Math.max(2.6, ppu * 0.045);
+        ctx.beginPath();
+        ctx.moveTo(-bladeLen * 0.22, 0);
+        ctx.lineTo(0, 0);
+        ctx.moveTo(0, -halfW * 1.6);
+        ctx.lineTo(0, halfW * 1.6);
+        ctx.stroke();
+      } else if (weaponSpec.id === 'negate') {
+        // Assassin Twin-Blades (-f(x))
+        const bladeLen = Math.max(24, ppu * 0.64 * scale);
+        ctx.fillStyle = col;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = Math.max(1, ppu * 0.016);
+        ctx.beginPath();
+        ctx.moveTo(0, -ppu * 0.03);
+        ctx.lineTo(bladeLen * 0.65, -ppu * 0.055);
+        ctx.lineTo(bladeLen, 0);
+        ctx.lineTo(bladeLen * 0.55, ppu * 0.032);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.strokeStyle = col;
+        ctx.lineWidth = Math.max(2, ppu * 0.034);
+        ctx.beginPath();
+        ctx.moveTo(-bladeLen * 0.25, 0);
+        ctx.lineTo(0, 0);
+        ctx.stroke();
+      } else {
+        // Vector Thrust Spear (-v⃗ / ⊥)
+        const shaftBack = Math.max(14, ppu * 0.34);
+        const bladeLen = Math.max(38, ppu * 1.05 * scale);
+        ctx.strokeStyle = isBlack ? '#e2e8f0' : '#334155';
+        ctx.lineWidth = Math.max(2.4, ppu * 0.038);
+        ctx.beginPath();
+        ctx.moveTo(-shaftBack, 0);
+        ctx.lineTo(bladeLen * 0.72, 0);
+        ctx.stroke();
+
+        ctx.fillStyle = col;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = Math.max(1.1, ppu * 0.018);
+        ctx.beginPath();
+        ctx.moveTo(bladeLen * 0.66, -ppu * 0.068);
+        ctx.lineTo(bladeLen * 1.08, 0);
+        ctx.lineTo(bladeLen * 0.66, ppu * 0.068);
+        ctx.lineTo(bladeLen * 0.74, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+
+    _drawParryShield(ctx, pose, camera, gridRenderer) {
+      const f = pose.facing || 1;
+      const sx = gridRenderer.worldToScreen(pose.shoulder.x + f * 0.38, pose.shoulder.y + 0.06, camera);
+      const r = Math.max(18, camera.ppu * 0.48);
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = '#38bdf8';
+      ctx.globalAlpha = 0.55;
+      ctx.lineWidth = Math.max(4, camera.ppu * 0.075);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      if (f >= 0) ctx.arc(sx.x - r * 0.25, sx.y, r, -1.05, 1.05);
+      else ctx.arc(sx.x + r * 0.25, sx.y, r, Math.PI - 1.05, Math.PI + 1.05);
+      ctx.stroke();
+
+      ctx.strokeStyle = '#fde047';
+      ctx.globalAlpha = 0.92;
+      ctx.lineWidth = Math.max(1.8, camera.ppu * 0.03);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     renderPose(ctx, pose, camera, gridRenderer, primaryColor, secondaryColor, eyeColor, alpha = 1, theme = null) {
       const ppu = camera.ppu;
       const torsoWidth = Math.max(2.6, ppu * 0.088);
       const limbWidth = Math.max(2.2, ppu * 0.072);
       const isGhost = eyeColor === null;
       const isBlack = !theme || theme.bg === '#000000';
+      const spec = this.getCharacterStyleSpec();
 
       const fHip = pose.frontHip || pose.hip;
       const bHip = pose.backHip || pose.hip;
@@ -2518,9 +3278,12 @@
       const bShoulder = pose.backShoulder || pose.shoulder;
       const backColor = isGhost ? secondaryColor : isBlack ? '#94a3b8' : '#475569';
 
-      let accentColor = theme ? theme.stickAccent : '#38bdf8';
+      let accentColor = isBlack ? (spec.accentBlack || '#38bdf8') : (spec.accentLight || '#2563eb');
       if (pose.auraStyle === 'gold') accentColor = '#fde047';
       else if (pose.auraStyle === 'purple') accentColor = '#c084fc';
+      else if (pose.auraStyle === 'emerald') accentColor = '#34d399';
+      else if (pose.auraStyle === 'crimson') accentColor = '#fb7185';
+      else if (pose.auraStyle === 'amber') accentColor = '#f59e0b';
       else if (pose.auraStyle === 'cyan') accentColor = '#38bdf8';
 
       const hw = gridRenderer.width * 0.5;
@@ -2531,10 +3294,11 @@
       ctx.save();
       ctx.globalAlpha = alpha;
 
-      // Subtle Anime Cursed Energy Aura halo (zero shadowBlur!)
+      // 1. Warrior / Cursed Energy Aura Halo (zero shadowBlur!)
       if (!isGhost && pose.auraStyle) {
         const bodyMidX = hw + ((pose.hip.x + pose.shoulder.x) * 0.5 - cx) * ppu;
         const bodyMidY = hh - ((pose.hip.y + pose.shoulder.y) * 0.5 - cy) * ppu;
+        const softMult = pose.auraSoft ? 0.55 : 1.0;
         let glowSprite;
         if (pose.auraStyle === 'gold') {
           glowSprite = this._getGlowSprite(
@@ -2550,6 +3314,27 @@
             'rgba(168, 85, 247, 0.18)',
             'rgba(126, 34, 206, 0.05)'
           );
+        } else if (pose.auraStyle === 'emerald') {
+          glowSprite = this._getGlowSprite(
+            'aura_emerald',
+            'rgba(110, 231, 183, 0.32)',
+            'rgba(52, 211, 153, 0.15)',
+            'rgba(16, 185, 129, 0.04)'
+          );
+        } else if (pose.auraStyle === 'crimson') {
+          glowSprite = this._getGlowSprite(
+            'aura_crimson',
+            'rgba(253, 164, 175, 0.32)',
+            'rgba(239, 68, 68, 0.16)',
+            'rgba(220, 38, 38, 0.04)'
+          );
+        } else if (pose.auraStyle === 'amber') {
+          glowSprite = this._getGlowSprite(
+            'aura_amber',
+            'rgba(253, 224, 71, 0.30)',
+            'rgba(245, 158, 11, 0.15)',
+            'rgba(217, 119, 6, 0.04)'
+          );
         } else {
           glowSprite = this._getGlowSprite(
             'aura_cyan',
@@ -2558,9 +3343,10 @@
             'rgba(14, 165, 233, 0.04)'
           );
         }
-        const auraR = ppu * 1.15;
+        const auraR = ppu * (pose.auraSoft ? 0.95 : 1.18);
         ctx.save();
         if (isBlack) ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha *= softMult;
         ctx.drawImage(glowSprite, bodyMidX - auraR, bodyMidY - auraR, auraR * 2, auraR * 2);
 
         // Crisp shimmering energy rim along spine & head
@@ -2569,7 +3355,7 @@
         const sHd = { x: hw + (pose.head.x - cx) * ppu, y: hh - (pose.head.y - cy) * ppu };
         const pulseW = torsoWidth * (2.15 + 0.25 * Math.sin(this.idleTime * 9));
         ctx.strokeStyle = accentColor;
-        ctx.globalAlpha = 0.22;
+        ctx.globalAlpha = 0.22 * softMult;
         ctx.lineWidth = pulseW;
         ctx.lineCap = 'round';
         ctx.beginPath();
@@ -2579,15 +3365,18 @@
         ctx.beginPath();
         ctx.arc(sHd.x, sHd.y, Math.max(4, pose.headRadius * ppu) * 1.32, 0, Math.PI * 2);
         ctx.fillStyle = accentColor;
-        ctx.globalAlpha = 0.16;
+        ctx.globalAlpha = 0.16 * softMult;
         ctx.fill();
         ctx.restore();
       }
 
-      // Back Scarf Layer
-      this._drawScarf(ctx, pose, camera, gridRenderer, accentColor, isGhost);
+      // 2. Back Scarf Layer tinted to style or active dance
+      let scarfColor = isBlack ? (spec.scarfBlack || accentColor) : (spec.scarfLight || accentColor);
+      if (this.dancing && pose.auraStyle === 'gold') scarfColor = '#fde047';
+      else if (this.dancing && pose.auraStyle === 'purple') scarfColor = '#c084fc';
+      this._drawScarf(ctx, pose, camera, gridRenderer, scarfColor, isGhost);
 
-      // Background Limbs
+      // 3. Background Limbs (wide flared hakama legs for Toji & Benimaru!)
       this._drawLimb(
         ctx,
         bShoulder,
@@ -2600,20 +3389,48 @@
         camera,
         false
       );
-      this._drawLimb(
-        ctx,
-        bHip,
-        pose.backKnee,
-        pose.backFoot,
-        pose.backToe,
-        pose.frontFacing ? limbWidth : limbWidth * 0.96,
-        backColor,
-        gridRenderer,
-        camera,
-        true
-      );
+      if (!isGhost && !this.dancing && spec.hakamaBlack) {
+        const hakBack = isBlack ? '#0f172a' : '#334155';
+        this._drawHakamaLeg(
+          ctx,
+          bHip,
+          pose.backKnee,
+          pose.backFoot,
+          pose.backToe,
+          limbWidth,
+          hakBack,
+          backColor,
+          isBlack ? '#475569' : '#1e293b',
+          gridRenderer,
+          camera,
+          true
+        );
+      } else {
+        this._drawLimb(
+          ctx,
+          bHip,
+          pose.backKnee,
+          pose.backFoot,
+          pose.backToe,
+          pose.frontFacing ? limbWidth : limbWidth * 0.96,
+          backColor,
+          gridRenderer,
+          camera,
+          true
+        );
+      }
 
-      // Sculpted Sorcerer Coat / V-Taper Torso
+      // Optional Off-hand Blade for Twin-Blades (-f(x)) before torso
+      const combatW = !isGhost && !pose.throwingSpear ? pose.combatWeapon : null;
+      if (combatW && combatW.id === 'negate' && pose.backHand) {
+        const f = pose.facing || 1;
+        const offDefAng = pose.offWeaponWorldAngle !== undefined
+          ? pose.offWeaponWorldAngle
+          : (f > 0 ? Math.PI - 0.52 : 0.52);
+        this._drawHeldWeapon(ctx, pose.backHand, offDefAng, combatW, camera, gridRenderer, isBlack, true);
+      }
+
+      // 4. Sculpted Warrior Coat / Gi / Alan Silhouette Torso
       const sHipX = hw + (pose.hip.x - cx) * ppu;
       const sHipY = hh - (pose.hip.y - cy) * ppu;
       const sShX = hw + (pose.shoulder.x - cx) * ppu;
@@ -2630,13 +3447,25 @@
         const px = -uy;
         const py = ux;
 
-        const shHalf = pose.frontFacing ? ppu * 0.128 : ppu * 0.088;
-        const hpHalf = pose.frontFacing ? ppu * 0.082 : ppu * 0.056;
-        const hemExt = ppu * 0.06;
+        const isToji = spec.id === 'toji' && !this.dancing;
+        const isBenimaru = spec.id === 'benimaru' && !this.dancing;
+        const shHalf = pose.frontFacing
+          ? ppu * 0.132
+          : isBenimaru
+            ? ppu * 0.105
+            : ppu * 0.088;
+        const hpHalf = pose.frontFacing
+          ? ppu * 0.084
+          : isToji
+            ? ppu * 0.052
+            : isBenimaru
+              ? ppu * 0.072
+              : ppu * 0.056;
+        const hemExt = isToji ? ppu * 0.025 : isBenimaru ? ppu * 0.085 : ppu * 0.06;
 
-        const coatFill = isBlack ? '#0b101d' : '#0f172a';
+        const coatFill = isBlack ? (spec.coatBlack || '#0b101d') : (spec.coatLight || '#0f172a');
         ctx.fillStyle = coatFill;
-        ctx.strokeStyle = primaryColor;
+        ctx.strokeStyle = isToji ? (isBlack ? '#64748b' : '#0f172a') : primaryColor;
         ctx.lineWidth = Math.max(1.5, ppu * 0.024);
         ctx.lineJoin = 'round';
         ctx.beginPath();
@@ -2649,18 +3478,53 @@
         ctx.fill();
         ctx.stroke();
 
-        // High Jujutsu collar & subtle glowing trim
-        ctx.strokeStyle = accentColor;
-        ctx.lineWidth = Math.max(1.3, ppu * 0.022);
-        ctx.beginPath();
-        ctx.moveTo(sShX - px * (shHalf * 0.52), sShY - py * (shHalf * 0.52));
-        ctx.lineTo(sNkX, sNkY);
-        ctx.lineTo(sShX + px * (shHalf * 0.52), sShY + py * (shHalf * 0.52));
-        if (pose.frontFacing) {
-          ctx.moveTo(sShX, sShY);
-          ctx.lineTo(sHipX, sHipY);
+        if (isToji) {
+          // Toji diagonal cursed-worm inventory sash + belt
+          const f = pose.facing || 1;
+          ctx.strokeStyle = spec.sashColor || '#9333ea';
+          ctx.lineWidth = Math.max(2.6, ppu * 0.045);
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(sShX - px * f * shHalf * 0.7, sShY - py * f * shHalf * 0.7);
+          ctx.lineTo(sHipX + px * f * hpHalf * 0.9, sHipY + py * f * hpHalf * 0.9);
+          ctx.stroke();
+          ctx.strokeStyle = '#34d399';
+          ctx.lineWidth = Math.max(1.4, ppu * 0.02);
+          ctx.beginPath();
+          ctx.moveTo(sHipX - px * hpHalf, sHipY - py * hpHalf);
+          ctx.lineTo(sHipX + px * hpHalf, sHipY + py * hpHalf);
+          ctx.stroke();
+        } else if (isBenimaru) {
+          // Benimaru glowing crimson haori edge trim + golden-amber obi sash
+          ctx.strokeStyle = spec.trimColor || '#ef4444';
+          ctx.lineWidth = Math.max(1.8, ppu * 0.028);
+          ctx.beginPath();
+          ctx.moveTo(sShX - px * (shHalf * 0.55), sShY - py * (shHalf * 0.55));
+          ctx.lineTo(sNkX, sNkY);
+          ctx.lineTo(sShX + px * (shHalf * 0.55), sShY + py * (shHalf * 0.55));
+          ctx.moveTo(sHipX - ux * hemExt + px * hpHalf * 1.15, sHipY - uy * hemExt + py * hpHalf * 1.15);
+          ctx.lineTo(sHipX - ux * hemExt - px * hpHalf * 1.15, sHipY - uy * hemExt - py * hpHalf * 1.15);
+          ctx.stroke();
+          ctx.strokeStyle = spec.sashColor || '#f59e0b';
+          ctx.lineWidth = Math.max(2.2, ppu * 0.036);
+          ctx.beginPath();
+          ctx.moveTo(sHipX - px * hpHalf, sHipY - py * hpHalf);
+          ctx.lineTo(sHipX + px * hpHalf, sHipY + py * hpHalf);
+          ctx.stroke();
+        } else {
+          // Gojo high Jujutsu collar & luminous trim
+          ctx.strokeStyle = accentColor;
+          ctx.lineWidth = Math.max(1.3, ppu * 0.022);
+          ctx.beginPath();
+          ctx.moveTo(sShX - px * (shHalf * 0.52), sShY - py * (shHalf * 0.52));
+          ctx.lineTo(sNkX, sNkY);
+          ctx.lineTo(sShX + px * (shHalf * 0.52), sShY + py * (shHalf * 0.52));
+          if (pose.frontFacing) {
+            ctx.moveTo(sShX, sShY);
+            ctx.lineTo(sHipX, sHipY);
+          }
+          ctx.stroke();
         }
-        ctx.stroke();
 
         // Neck stem
         ctx.strokeStyle = primaryColor;
@@ -2681,19 +3545,37 @@
         ctx.stroke();
       }
 
-      // Foreground Limbs
-      this._drawLimb(
-        ctx,
-        fHip,
-        pose.frontKnee,
-        pose.frontFoot,
-        pose.frontToe,
-        limbWidth,
-        primaryColor,
-        gridRenderer,
-        camera,
-        true
-      );
+      // 5. Foreground Limbs & Style Hakama
+      if (!isGhost && !this.dancing && spec.hakamaBlack) {
+        const hakFront = isBlack ? spec.hakamaBlack : (spec.hakamaLight || '#334155');
+        this._drawHakamaLeg(
+          ctx,
+          fHip,
+          pose.frontKnee,
+          pose.frontFoot,
+          pose.frontToe,
+          limbWidth,
+          hakFront,
+          primaryColor,
+          isBlack ? '#64748b' : '#0f172a',
+          gridRenderer,
+          camera,
+          false
+        );
+      } else {
+        this._drawLimb(
+          ctx,
+          fHip,
+          pose.frontKnee,
+          pose.frontFoot,
+          pose.frontToe,
+          limbWidth,
+          primaryColor,
+          gridRenderer,
+          camera,
+          true
+        );
+      }
       this._drawLimb(
         ctx,
         fShoulder,
@@ -2707,7 +3589,27 @@
         false
       );
 
-      // Sculpted Head & Luminous Eyes ("Six Eyes")
+      // Thrown Vector Spear or Held Combat Sword in frontHand
+      if (!isGhost && pose.throwingSpear && pose.frontHand) {
+        this._drawThrowSpear(ctx, pose.frontHand, pose.throwingSpear, camera, gridRenderer, theme);
+      } else if (combatW && pose.frontHand) {
+        const f = pose.facing || 1;
+        const defaultAng = combatW.id === 'diff'
+          ? (f > 0 ? 0.34 : Math.PI - 0.34)
+          : combatW.id === 'integ'
+            ? (f > 0 ? -0.45 : Math.PI + 0.45)
+            : combatW.id === 'negate'
+              ? (f > 0 ? 0.22 : Math.PI - 0.22)
+              : (f > 0 ? 0.14 : Math.PI - 0.14);
+        const wAng = pose.weaponWorldAngle !== undefined ? pose.weaponWorldAngle : defaultAng;
+        this._drawHeldWeapon(ctx, pose.frontHand, wAng, combatW, camera, gridRenderer, isBlack, false);
+      }
+
+      if (!isGhost && pose.parrying) {
+        this._drawParryShield(ctx, pose, camera, gridRenderer);
+      }
+
+      // 6. Sculpted Head, Hair Spikes & Signature Style Eyes
       const sHeadX = hw + (pose.head.x - cx) * ppu;
       const sHeadY = hh - (pose.head.y - cy) * ppu;
       const headPx = Math.max(4, pose.headRadius * ppu);
@@ -2725,22 +3627,63 @@
         ctx.stroke();
       }
 
+      if (!isGhost && headPx >= 4.5) {
+        this._drawHairSpikes(ctx, sHeadX, sHeadY, sNkX, sNkY, headPx, pose, spec, primaryColor, accentColor, isBlack);
+      }
+
       const activeEyeColor = pose.eyeColorOverride || eyeColor;
       if (headPx >= 6 && activeEyeColor) {
-        const isSixEyes = Boolean(pose.eyeColorOverride);
-        const eyeR = Math.max(1.5, headPx * (isSixEyes ? 0.18 : 0.15));
+        const styleId = pose.styleId || spec.id;
+        const useGlowEye = Boolean(pose.eyeColorOverride) && (this.dancing || styleId !== 'animator');
+        const eyeR = Math.max(1.5, headPx * (useGlowEye ? 0.19 : 0.15));
 
-        const drawGlowingEye = (ex, ey) => {
-          if (isSixEyes) {
-            const eGlow = this._getGlowSprite(
-              'eye_cyan',
-              'rgba(224, 242, 254, 0.95)',
-              'rgba(56, 189, 248, 0.55)',
-              'rgba(14, 165, 233, 0.15)'
-            );
-            const gR = eyeR * 3.8;
+        const drawStyledEye = (ex, ey, isLeftEye = false) => {
+          if (styleId === 'benimaru' && !this.dancing) {
+            // Fire Force Benimaru mismatched Red circle (○) & Gold cross (×) eyes
+            const isGoldCross = pose.frontFacing ? !isLeftEye : false;
+            const ringCol = isGoldCross ? '#fde047' : '#ef4444';
+            ctx.strokeStyle = ringCol;
+            ctx.lineWidth = Math.max(1.3, eyeR * 0.62);
+            if (isGoldCross) {
+              const r = eyeR * 0.95;
+              ctx.beginPath();
+              ctx.moveTo(ex - r, ey - r);
+              ctx.lineTo(ex + r, ey + r);
+              ctx.moveTo(ex + r, ey - r);
+              ctx.lineTo(ex - r, ey + r);
+              ctx.stroke();
+            } else {
+              ctx.beginPath();
+              ctx.arc(ex, ey, eyeR * 0.95, 0, Math.PI * 2);
+              ctx.stroke();
+              if (!pose.frontFacing) {
+                ctx.fillStyle = '#fde047';
+                ctx.beginPath();
+                ctx.arc(ex, ey, eyeR * 0.36, 0, Math.PI * 2);
+                ctx.fill();
+              }
+            }
+            return;
+          }
+
+          if (useGlowEye) {
+            const isEmerald = styleId === 'toji' && !this.dancing;
+            const eGlow = isEmerald
+              ? this._getGlowSprite(
+                  'eye_emerald',
+                  'rgba(167, 243, 208, 0.95)',
+                  'rgba(52, 211, 153, 0.55)',
+                  'rgba(5, 150, 105, 0.15)'
+                )
+              : this._getGlowSprite(
+                  'eye_cyan',
+                  'rgba(224, 242, 254, 0.95)',
+                  'rgba(56, 189, 248, 0.55)',
+                  'rgba(14, 165, 233, 0.15)'
+                );
+            const gR = eyeR * 3.6;
             ctx.drawImage(eGlow, ex - gR, ey - gR, gR * 2, gR * 2);
-            ctx.fillStyle = '#e0f2fe';
+            ctx.fillStyle = isEmerald ? '#d1fae5' : '#e0f2fe';
             ctx.beginPath();
             ctx.arc(ex, ey, eyeR * 0.72, 0, Math.PI * 2);
             ctx.fill();
@@ -2749,7 +3692,7 @@
             ctx.beginPath();
             ctx.ellipse(ex, ey, eyeR * 1.15, eyeR * 0.85, 0, 0, Math.PI * 2);
             ctx.fill();
-            ctx.fillStyle = theme ? theme.stickAccent : '#38bdf8';
+            ctx.fillStyle = accentColor;
             ctx.beginPath();
             ctx.arc(ex + pose.facing * eyeR * 0.2, ey - eyeR * 0.15, Math.max(0.9, eyeR * 0.36), 0, Math.PI * 2);
             ctx.fill();
@@ -2759,13 +3702,13 @@
         if (pose.frontFacing) {
           const eyeSpread = headPx * 0.29;
           const eyeYOff = headPx * 0.05;
-          drawGlowingEye(sHeadX - eyeSpread, sHeadY - eyeYOff);
-          drawGlowingEye(sHeadX + eyeSpread, sHeadY - eyeYOff);
+          drawStyledEye(sHeadX - eyeSpread, sHeadY - eyeYOff, true);
+          drawStyledEye(sHeadX + eyeSpread, sHeadY - eyeYOff, false);
         } else if (pose.eyeDir) {
           const dLen = Math.hypot(pose.eyeDir.x, pose.eyeDir.y) || 1;
           const ex = sHeadX + (pose.eyeDir.x / dLen) * (headPx * 0.44);
           const ey = sHeadY - (pose.eyeDir.y / dLen) * (headPx * 0.44);
-          drawGlowingEye(ex, ey);
+          drawStyledEye(ex, ey, false);
         } else {
           const dx = pose.head.x - pose.neck.x;
           const dy = pose.head.y - pose.neck.y;
@@ -2776,7 +3719,7 @@
           const sin = Math.sin(theta);
           const wxOff = eyeForward * cos - eyeUp * sin;
           const wyOff = eyeForward * sin + eyeUp * cos;
-          drawGlowingEye(sHeadX + wxOff, sHeadY - wyOff);
+          drawStyledEye(sHeadX + wxOff, sHeadY - wyOff, false);
         }
       }
 

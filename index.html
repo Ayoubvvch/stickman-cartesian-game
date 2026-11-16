@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Stickman · Orthonormal Cartesian Frame v3.0</title>
-  <link rel="stylesheet" href="style.css?v=3.0.0" />
+  <title>Stickman · Orthonormal Cartesian Frame v4.0</title>
+  <link rel="stylesheet" href="style.css?v=4.0.0" />
 </head>
 <body class="theme-black">
   <div id="app">
@@ -128,6 +128,10 @@
 
           <!-- Group 3: Stickman Actions & Audio -->
           <div class="tool-group" role="group" aria-label="Actions">
+            <button id="btnStyle" class="tool-btn btn-style" title="Switch Warrior Style: Infinity · Zero Curse · Crimson Pyre · Animator+ (N)" data-style="gojo">
+              <span id="styleDot" class="style-chip-dot" aria-hidden="true"></span>
+              <span id="styleLabel">Infinity</span>
+            </button>
             <button id="btnFreeFall" class="tool-btn" title="Drop from Altitude for Free Fall (G)">Drop</button>
             <button id="btnDance" class="tool-btn" title="Toggle Dance (Z · 1/2/3)" aria-pressed="false">Dance</button>
             <button id="btnAudio" class="tool-btn" title="Mute/Unmute Audio & Synth (M)" aria-pressed="false" aria-label="Audio" data-audio-state="idle">🔊</button>
@@ -202,7 +206,7 @@
           </div>
 
           <div id="vectorStatus" class="vector-status" dir="auto" aria-live="polite">
-            أطلق <span dir="ltr">u⃗</span> بـ <kbd dir="ltr">U</kbd> أو النقر، ثم اركض بـ <kbd dir="ltr">Shift</kbd> واقفز للركوب!
+            أطلق <span dir="ltr">u⃗</span> بـ <kbd dir="ltr">U</kbd> أو النقر، اركض بـ <kbd dir="ltr">Shift</kbd> للركوب، وجّه بسلاسة بـ <kbd dir="ltr">WASD</kbd> + سرّع بـ <kbd dir="ltr">Shift</kbd>، واقفز بـ <kbd dir="ltr">Space</kbd>!
           </div>
         </section>
       </div>
@@ -210,58 +214,63 @@
 
     <!-- Bottom-Center Weapon & Operator Dock (Active during Math Battle Arena) -->
     <div id="weaponBar" class="hud-card weapon-bar hidden" aria-label="الأسلحة والعمليات الرياضية">
-      <div class="weapon-buttons" role="group" aria-label="اختيار العملية الرياضية">
-        <button type="button" class="weapon-btn active" data-weapon="0">
+      <div class="weapon-buttons" role="group" aria-label="اختيار السلاح والعملية الرياضية">
+        <button type="button" class="weapon-btn active" data-weapon="0" title="d/dx Katana: fast combos that reduce polynomial degree">
           <kbd>1</kbd>
           <span class="weapon-sym">d/dx</span>
-          <span class="weapon-sub">الاشتقاق</span>
+          <span class="weapon-sub">كاتانا</span>
         </button>
-        <button type="button" class="weapon-btn" data-weapon="1">
+        <button type="button" class="weapon-btn" data-weapon="1" title="∫ dx Broadsword: closes negative deficits & smooths |x| kinks">
           <kbd>2</kbd>
           <span class="weapon-sym">∫ dx</span>
-          <span class="weapon-sub">التكامل</span>
+          <span class="weapon-sub">سيف ثقيل</span>
         </button>
-        <button type="button" class="weapon-btn" data-weapon="2">
+        <button type="button" class="weapon-btn" data-weapon="2" title="-f(x) Twin-Blades: destructive interference vs eˣ, sin, cos">
           <kbd>3</kbd>
           <span class="weapon-sym">-f(x)</span>
-          <span class="weapon-sub">النظير</span>
+          <span class="weapon-sub">نصلان</span>
         </button>
-        <button type="button" class="weapon-btn" data-weapon="3">
+        <button type="button" class="weapon-btn" data-weapon="3" title="-v⃗ / ⊥ Spear: counter opposite/orthogonal force vectors">
           <kbd>4</kbd>
           <span class="weapon-sym">-v⃗ / ⊥</span>
-          <span class="weapon-sub">المتجهة</span>
+          <span class="weapon-sub">رمح القوة</span>
         </button>
         <span class="weapon-sep" aria-hidden="true"></span>
-        <button id="btnArenaLaunchVec" type="button" class="weapon-btn weapon-vec-btn" title="Launch Rideable Vector u⃗ (Chasles mid-ride)">
+        <button id="btnArenaParry" type="button" class="weapon-btn weapon-parry-btn" aria-pressed="false" title="Parry incoming attacks on [!] flash (K or Right-Click)">
+          <kbd>K</kbd>
+          <span class="weapon-sym">🛡️</span>
+          <span class="weapon-sub">صَدّ</span>
+        </button>
+        <button id="btnArenaLaunchVec" type="button" class="weapon-btn weapon-vec-btn" title="Throw Rideable Vector Spear u⃗ (Chasles mid-ride)">
           <kbd>U</kbd>
           <span class="weapon-sym"><span class="vec">u</span></span>
           <span class="weapon-sub">ركوب/شال</span>
         </button>
       </div>
       <div id="weaponDesc" class="weapon-desc" dir="rtl">
-        يخفض درجة كثيرات الحدود (x³ → 3x² → 6x → 6 → 0) · إطلاق: نقر بالماوس أو J
+        كاتانا سريعة تخفض درجة كثيرات الحدود · هجوم: نقر/J · صَدّ: K/يمين · سحق أرضي: S+هجوم
       </div>
     </div>
 
     <!-- Collapsible Controls Legend -->
     <aside id="helpPanel" class="hud-card help-panel" aria-label="Controls Guide">
       <div class="help-header">
-        <strong>Movement & Math Controls</strong>
+        <strong>Movement, Swords & Math Controls</strong>
         <button id="btnCloseHelp" class="close-mini" aria-label="Close">×</button>
       </div>
       <div class="help-columns">
         <div class="help-col">
           <div class="help-col-title">⌨️ Keyboard & Mouse</div>
           <ul>
-            <li><kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd> : Walk along x-axis</li>
-            <li><kbd>Shift</kbd> + Move : Sprint (required to chase vectors!)</li>
-            <li><kbd>Space</kbd> or <kbd>W</kbd> / <kbd>↑</kbd> : Jump (double jump)</li>
-            <li><kbd>U</kbd> : Launch vector <span class="vec">u</span> (press mid-ride for Chasles <span class="vec">u</span>+<span class="vec">w</span>!)</li>
-            <li><kbd>Q</kbd> (or <kbd>W</kbd>/<kbd>↑</kbd> at x = 0) : Climb y-axis</li>
-            <li><b>Arena</b> : Weapons <kbd>1</kbd>–<kbd>4</kbd> · Click / <kbd>J</kbd> fire · Right-Drag pan</li>
+            <li><kbd>←</kbd> <kbd>→</kbd> or <kbd>A</kbd> <kbd>D</kbd> : Walk along x-axis · 2D turn on vectors</li>
+            <li><kbd>Shift</kbd> + Move : Sprint (catch vectors!) · 2.35× Overdrive mid-ride</li>
+            <li><kbd>Space</kbd> / <kbd>W</kbd> / <kbd>↑</kbd> : Jump (double jump) · <kbd>Space</kbd> vaults off vector</li>
+            <li><kbd>U</kbd> : Throw vector <span class="vec">u</span> from hand · Steer <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · Chasles <kbd>U</kbd> mid-ride</li>
+            <li><kbd>Q</kbd> (or <kbd>W</kbd>/<kbd>↑</kbd> at x = 0) : Climb y-axis · <kbd>N</kbd> : Switch Warrior Style</li>
+            <li><b>Arena</b> : Swords <kbd>1</kbd>–<kbd>4</kbd> · Click/<kbd>J</kbd> Slash · <kbd>S</kbd>+Hit Air Slam · <kbd>K</kbd>/Right-Click Parry</li>
             <li><b>f(x) Lab</b> : Toggle curves (<code>OFF</code> by default) · <kbd>S</kbd> carve · <kbd>S</kbd>+<kbd>Space</kbd> drop</li>
             <li><b>Trials Mode</b> : Calculus challenges (<kbd>B</kbd> Lock critical/inflection point)</li>
-            <li><kbd>Z</kbd> : Dance (<kbd>1</kbd>–<kbd>3</kbd> outside Arena) · <kbd>E</kbd>/<kbd>K</kbd> Dash · <kbd>F</kbd> Flip · <kbd>R</kbd> Reset</li>
+            <li><kbd>Z</kbd> : Dance (<kbd>1</kbd>–<kbd>3</kbd> outside Arena) · <kbd>E</kbd>/<kbd>X</kbd> Dash · <kbd>F</kbd> Flip · <kbd>R</kbd> Reset</li>
           </ul>
         </div>
         <div class="help-col">
@@ -278,7 +287,7 @@
         </div>
       </div>
       <div class="help-footer">
-        💡 Launch a vector <kbd>U</kbd>, chase with <kbd>Shift</kbd> &amp; catch it mid-air! Open <b>Arena</b> to fight math functions using <kbd>1</kbd> d/dx, <kbd>2</kbd> ∫dx, <kbd>3</kbd> -f(x), and <kbd>4</kbd> -v⃗/⊥.
+        💡 Switch anime warrior look with <kbd>N</kbd> (Infinity / Zero Curse / Crimson Pyre / Animator+). Throw vector <kbd>U</kbd>, chase with <kbd>Shift</kbd>, and steer smoothly with <kbd>WASD</kbd>! Open <b>Arena</b> to fight rival Stickmen using swords <kbd>1</kbd>–<kbd>4</kbd> &amp; Parry <kbd>K</kbd>.
       </div>
     </aside>
 
@@ -392,18 +401,18 @@
     </section>
   </div>
 
-  <script defer src="js/config.js?v=3.0.0"></script>
-  <script defer src="js/math-cas.js?v=3.0.0"></script>
-  <script defer src="js/functions.js?v=3.0.0"></script>
-  <script defer src="js/challenges.js?v=3.0.0"></script>
-  <script defer src="js/input.js?v=3.0.0"></script>
-  <script defer src="js/particles.js?v=3.0.0"></script>
-  <script defer src="js/glfx.js?v=3.0.0"></script>
-  <script defer src="js/audio-fx.js?v=3.0.0"></script>
-  <script defer src="js/grid.js?v=3.0.0"></script>
-  <script defer src="js/vectors.js?v=3.0.0"></script>
-  <script defer src="js/combat.js?v=3.0.0"></script>
-  <script defer src="js/stickman.js?v=3.0.0"></script>
-  <script defer src="js/game.js?v=3.0.0"></script>
+  <script defer src="js/config.js?v=4.0.0"></script>
+  <script defer src="js/math-cas.js?v=4.0.0"></script>
+  <script defer src="js/functions.js?v=4.0.0"></script>
+  <script defer src="js/challenges.js?v=4.0.0"></script>
+  <script defer src="js/input.js?v=4.0.0"></script>
+  <script defer src="js/particles.js?v=4.0.0"></script>
+  <script defer src="js/glfx.js?v=4.0.0"></script>
+  <script defer src="js/audio-fx.js?v=4.0.0"></script>
+  <script defer src="js/grid.js?v=4.0.0"></script>
+  <script defer src="js/vectors.js?v=4.0.0"></script>
+  <script defer src="js/combat.js?v=4.0.0"></script>
+  <script defer src="js/stickman.js?v=4.0.0"></script>
+  <script defer src="js/game.js?v=4.0.0"></script>
 </body>
 </html>

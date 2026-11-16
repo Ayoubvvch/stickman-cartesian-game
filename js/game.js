@@ -35,6 +35,7 @@
     const stickman = new Stickman(particles, functions, vectorSystem);
     const challenges = new ChallengeManager(functions, stickman, particles);
     const combat = new MathCombatArena(stickman, particles, vectorSystem, audioFx);
+    stickman.setCombatArena(combat);
 
     const state = {
       themeName: 'black',
@@ -95,6 +96,8 @@
     const btnVelocity = document.getElementById('btnVelocity');
     const btnVectors = document.getElementById('btnVectors');
     const btnFreeFall = document.getElementById('btnFreeFall');
+    const btnStyle = document.getElementById('btnStyle');
+    const styleLabel = document.getElementById('styleLabel');
     const btnDance = document.getElementById('btnDance');
     const btnAudio = document.getElementById('btnAudio');
     const btnFunc = document.getElementById('btnFunc');
@@ -150,6 +153,7 @@
     const arenaGameOverText = document.getElementById('arenaGameOverText');
     const weaponBar = document.getElementById('weaponBar');
     const weaponDesc = document.getElementById('weaponDesc');
+    const btnArenaParry = document.getElementById('btnArenaParry');
     const btnArenaLaunchVec = document.getElementById('btnArenaLaunchVec');
 
     const trialPanel = document.getElementById('trialPanel');
@@ -178,6 +182,7 @@
     let lastRenderTimestamp = lastTimestamp - 100;
     let forceWakeFrame = true;
     let idleSettleFrames = 6;
+    let latestCrouchHeld = false;
 
     function computeDpr(w, h) {
       const raw = global.devicePixelRatio || 1;
@@ -276,17 +281,31 @@
       }
     }
 
+    function syncStyleButton() {
+      if (!btnStyle) return;
+      const spec = stickman.getCharacterStyleSpec();
+      btnStyle.dataset.style = spec.id;
+      if (styleLabel) styleLabel.textContent = spec.label;
+      btnStyle.title = `Warrior Style: ${spec.nameAr || spec.label} (N)`;
+    }
+
     function launchVectorWithSfx(ux, uy) {
       audioFx.unlock();
-      const res = vectorSystem.launchVector(ux, uy, stickman);
-      if (res && res.kind === 'chasles') {
-        audioFx.playChaslesAdd();
-      } else if (res && res.kind === 'launch') {
-        audioFx.playVectorLaunch();
+      if (typeof audioFx.playThrowWhoosh === 'function') {
+        audioFx.playThrowWhoosh();
       }
-      syncVectorUi(true);
+      stickman.startVectorThrow(ux, uy, (hx, hy) => {
+        const opts = stickman.ridingVector ? {} : { originX: hx, originY: hy };
+        const res = vectorSystem.launchVector(ux, uy, stickman, opts);
+        if (res && res.kind === 'chasles') {
+          audioFx.playChaslesAdd();
+        } else if (res && res.kind === 'launch') {
+          audioFx.playVectorLaunch();
+        }
+        syncVectorUi(true);
+        wakeFrame();
+      });
       wakeFrame();
-      return res;
     }
 
     function getQuickVectorComponents() {
@@ -295,7 +314,7 @@
       }
       if (combat.active && pointer.overCanvas) {
         const ux = pointer.worldX - stickman.x;
-        const uy = pointer.worldY - (stickman.y + 0.55);
+        const uy = pointer.worldY - (stickman.y + 1.05);
         if (Math.hypot(ux, uy) >= 0.45) {
           return { ux, uy };
         }
@@ -414,6 +433,14 @@
       audioFx.unlock();
       wakeFrame();
     });
+    if (btnStyle) {
+      btnStyle.addEventListener('click', () => {
+        audioFx.unlock();
+        stickman.cycleCharacterStyle();
+        syncStyleButton();
+        wakeFrame();
+      });
+    }
     if (btnFx) {
       btnFx.addEventListener('click', () => {
         glfx.setEnabled(!glfx.enabled);
@@ -483,7 +510,8 @@
       }
       const totalHits = combat.rightHits + combat.wrongHits;
       const accPct = totalHits > 0 ? Math.round((combat.rightHits / totalHits) * 100) : 100;
-      const sig = `${combat.wave}|${Math.round(combat.hp)}|${combat.score}|${combat.combo}|${accPct}|${combat.weaponIndex}|${combat.gameOver ? 1 : 0}|${combat.lastLog}`;
+      const isParrying = combat.parryTimer > 0 || combat.parrySuccessTimer > 0;
+      const sig = `${combat.wave}|${Math.round(combat.hp)}|${combat.score}|${combat.combo}|${accPct}|${combat.weaponIndex}|${combat.gameOver ? 1 : 0}|${isParrying ? 1 : 0}|${combat.parryCount}|${combat.lastLog}`;
       if (!force && sig === lastArenaSig) return;
       lastArenaSig = sig;
 
@@ -507,6 +535,11 @@
         arenaGameOverText.textContent = `انتهى التوازن عند الموجة ${combat.wave} · نقاط ${combat.score} · أقصى سلسلة ×${combat.bestCombo}`;
       }
 
+      if (btnArenaParry) {
+        btnArenaParry.classList.toggle('is-parrying', isParrying);
+        btnArenaParry.setAttribute('aria-pressed', String(combat.parryTimer > 0));
+      }
+
       if (weaponBar) {
         const wBtns = weaponBar.querySelectorAll('.weapon-btn[data-weapon]');
         wBtns.forEach((btn) => {
@@ -517,7 +550,7 @@
         });
         const w = combat.getActiveWeapon();
         if (weaponDesc && w) {
-          weaponDesc.textContent = `${w.descAr} · إطلاق: نقر بالماوس أو J`;
+          weaponDesc.textContent = `${w.descAr} · صَدّ: K/يمين · سحق: S+هجوم`;
         }
       }
     }
@@ -588,8 +621,8 @@
           vectorStatus.textContent = vectorSystem.lastFormulaText;
         } else {
           vectorStatus.textContent = state.vecAimMode && !combat.active
-            ? 'وضع التصويب بالماوس مفعّل: انقر لإطلاق المتجهة (سحب الكاميرا باليمين). اركض [Shift] واقفز للركوب!'
-            : 'أطلق u⃗ بـ [U] ثم اركض بـ [Shift] واقفز للركوب، أو اضغط [U] أثناء الركوب لعلاقة شال!';
+            ? 'وضع التصويب مفعّل: انقر لإطلاق المتجهة، اركض [Shift] للركوب، وجّه بـ [WASD] + تسريع [Shift]، واقفز بـ [Space]!'
+            : 'أطلق u⃗ بـ [U] ثم اركض [Shift] للركوب، وجّه بسلاسة بـ [WASD] + سرّع بـ [Shift]، أو [U] أثناء الركوب لعلاقة شال!';
         }
       }
     }
@@ -1080,6 +1113,15 @@
         });
       });
     }
+    if (btnArenaParry) {
+      btnArenaParry.addEventListener('click', () => {
+        if (!combat.active || combat.gameOver) return;
+        audioFx.unlock();
+        combat.triggerParry();
+        syncArenaUi(true);
+        wakeFrame();
+      });
+    }
     if (btnArenaLaunchVec) {
       btnArenaLaunchVec.addEventListener('click', () => {
         const comp = getQuickVectorComponents();
@@ -1088,6 +1130,7 @@
     }
 
     syncFxButton();
+    syncStyleButton();
     syncFuncControls();
     syncVectorUi(true);
     syncCanvasCursor();
@@ -1119,6 +1162,11 @@
       else if (e.code === 'KeyP') setProjections(!state.showProjections);
       else if (e.code === 'KeyV') setVelocity(!state.showVelocity);
       else if (e.code === 'KeyC') setFollowCamera(!state.followCamera);
+      else if (e.code === 'KeyN') {
+        stickman.cycleCharacterStyle();
+        syncStyleButton();
+        wakeFrame();
+      }
       else if (e.code === 'KeyM') {
         honoredAudio.toggleMute();
         wakeFrame();
@@ -1147,7 +1195,7 @@
         return;
       }
       const ox = stickman.x;
-      const oy = Math.max(0.28, stickman.y + 0.34);
+      const oy = stickman.y + 1.05;
       vectorSystem.setAimPreview(ox, oy, pointer.worldX - ox, pointer.worldY - oy);
     }
 
@@ -1160,7 +1208,13 @@
       const aimY = pointer.overCanvas
         ? pointer.worldY - (stickman.y + 0.92)
         : 0;
-      combat.fireWeapon(aimX, aimY);
+      const crouchNow =
+        latestCrouchHeld ||
+        input.keysDown.has('KeyS') ||
+        input.keysDown.has('ArrowDown') ||
+        Boolean(input.virtualState && input.virtualState.down);
+      combat.fireWeapon(aimX, aimY, crouchNow);
+      syncArenaUi(true);
       wakeFrame();
     }
 
@@ -1170,9 +1224,18 @@
 
     let vecAimPressed = false;
 
-    // Canvas mouse aim/fire/vector-launch, drag pan & wheel zoom
+    // Canvas mouse aim/fire/parry/vector-launch, drag pan & wheel zoom
     canvas.addEventListener('pointerdown', (e) => {
       updatePointerFromEvent(e);
+      if (e.button === 2 && combat.active) {
+        audioFx.unlock();
+        if (!combat.gameOver) {
+          combat.triggerParry();
+          syncArenaUi(true);
+        }
+        wakeFrame();
+        return;
+      }
       if (e.button === 1 || e.button === 2) {
         state.dragging = true;
         state.dragLastX = e.clientX;
@@ -1230,7 +1293,7 @@
       if (vecAimPressed && e.type === 'pointerup') {
         vecAimPressed = false;
         const ox = stickman.x;
-        const oy = Math.max(0.28, stickman.y + 0.34);
+        const oy = stickman.y + 1.05;
         const ux = pointer.worldX - ox;
         const uy = pointer.worldY - oy;
         vectorSystem.clearAimPreview();
@@ -1733,6 +1796,7 @@
       const dt = Math.min(Math.max(rawDt, 0.001), 0.05);
 
       const frameInput = input.sampleFrame();
+      latestCrouchHeld = Boolean(frameInput.crouchHeld);
       if (frameInput.resetPressed) {
         if (challenges.active) {
           challenges.resetTrial();
@@ -1761,6 +1825,11 @@
       if (frameInput.vectorLaunchPressed) {
         const comp = getQuickVectorComponents();
         launchVectorWithSfx(comp.ux, comp.uy);
+      }
+
+      if (combat.active && frameInput.parryPressed && !combat.gameOver) {
+        combat.triggerParry();
+        syncArenaUi(true);
       }
 
       if (combat.active && frameInput.firePressed && !combat.gameOver) {
@@ -1861,9 +1930,13 @@
 
       const keepLoopRunning =
         movingOrSurfingSlope ||
+        stickman.throwState.active ||
+        stickman.glFlashTimer > 0 ||
         particles.hasAny() ||
         vectorSystem.hasAny() ||
         combat.active ||
+        combat.hitstopTimer > 0 ||
+        combat.shakeTimer > 0 ||
         state.dragging ||
         camSettling ||
         input.hasActiveInput() ||
@@ -1884,10 +1957,11 @@
       }
       glfx.render(stickman, state.camera, grid, theme, now * 0.001);
 
+      const shake = combat.getScreenShakeOffset();
       ctx.save();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.setTransform(dpr, 0, 0, dpr, shake.x * dpr, shake.y * dpr);
 
       grid.renderAxisClimbCue(ctx, stickman, state.camera, theme);
       functions.render(ctx, state.camera, grid, theme, stickman);

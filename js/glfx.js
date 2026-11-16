@@ -38,6 +38,7 @@ uniform float uOrbRedAlpha;
 uniform vec2 uOrbPurplePx;
 uniform float uOrbPurpleAlpha;
 uniform float uPurpleRadiusPx;
+uniform vec3 uStyleColor;
 
 float hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -51,15 +52,15 @@ void main() {
   float alpha = 0.0;
   float themeMult = mix(0.45, 1.0, uIsDark);
 
-  // 1. Subtle kinetic focus halo around the Stickman
+  // 1. Subtle kinetic focus halo tinted by active Warrior Style
   vec2 dStick = px - uStickPx;
   float distStick = length(dStick);
-  float baseGlow = exp(-distStick * 0.0085) * (0.07 + 0.14 * uSpeedNorm) * themeMult;
-  vec3 focusCol = mix(vec3(0.18, 0.55, 0.95), vec3(0.22, 0.78, 0.98), uIsDark);
+  float baseGlow = exp(-distStick * 0.0085) * (0.09 + 0.16 * uSpeedNorm) * themeMult;
+  vec3 focusCol = uStyleColor;
   col += focusCol * baseGlow;
-  alpha += baseGlow * 0.7;
+  alpha += baseGlow * 0.72;
 
-  // 2. Surf slope tangent energy flare
+  // 2. Surf / Vector-Ride slope tangent energy flare
   if (uSurfActive > 0.01) {
     vec2 tang = vec2(cos(uSlopeAngle), -sin(uSlopeAngle));
     vec2 normV = vec2(-tang.y, tang.x);
@@ -67,9 +68,9 @@ void main() {
     float perp = dot(dStick, normV);
     float ribbon = exp(-abs(perp) * 0.075) * exp(-abs(along) * 0.009);
     float shimmer = 0.75 + 0.25 * sin(along * 0.06 - uTime * 10.0);
-    float surfIntensity = ribbon * shimmer * uSurfActive * (0.28 + 0.42 * uSpeedNorm) * themeMult;
-    col += vec3(0.15, 0.78, 1.0) * surfIntensity;
-    alpha += surfIntensity * 0.72;
+    float surfIntensity = ribbon * shimmer * uSurfActive * (0.30 + 0.44 * uSpeedNorm) * themeMult;
+    col += mix(vec3(0.15, 0.78, 1.0), uStyleColor, 0.55) * surfIntensity;
+    alpha += surfIntensity * 0.74;
   }
 
   // 3. Dash / high-speed directional streaks
@@ -81,9 +82,9 @@ void main() {
     float aCoord = dot(dStick, dir);
     float streakBand = sin(pCoord * 0.14 + hash12(vec2(floor(pCoord * 0.05), 1.0)) * 6.28);
     float wake = exp(-abs(pCoord) * 0.012) * smoothstep(20.0, -240.0, aCoord) * exp(aCoord * 0.005);
-    float sVal = max(0.0, streakBand) * wake * intensity * 0.42 * themeMult;
-    col += vec3(0.35, 0.85, 1.0) * sVal;
-    alpha += sVal * 0.8;
+    float sVal = max(0.0, streakBand) * wake * intensity * 0.44 * themeMult;
+    col += mix(vec3(0.35, 0.85, 1.0), uStyleColor, 0.65) * sVal;
+    alpha += sVal * 0.82;
   }
 
   // 4. Dance Mode 1: Hollow Purple spatial distortion & plasma orbs
@@ -235,6 +236,7 @@ void main() {
         'uOrbPurplePx',
         'uOrbPurpleAlpha',
         'uPurpleRadiusPx',
+        'uStyleColor',
       ];
       for (const name of uNames) {
         this.uniforms[name] = gl.getUniformLocation(prog, name);
@@ -336,8 +338,15 @@ void main() {
         }
       }
 
-      const dashGlow = stickman.dashTimer > 0 ? utils.clamp(stickman.dashTimer / 0.16, 0, 1) : 0;
+      const dashGlowRaw = stickman.dashTimer > 0 ? utils.clamp(stickman.dashTimer / 0.16, 0, 1) : 0;
+      const combatBurst = stickman.glFlashTimer > 0 ? utils.clamp(stickman.glFlashTimer / 0.25, 0, 1) : 0;
+      const dashGlow = Math.max(dashGlowRaw, combatBurst * 0.85);
       const isDark = theme && theme.bg === '#000000' ? 1.0 : 0.0;
+      const surfActive = stickman.surfingCurve || stickman.ridingVector ? 1.0 : 0.0;
+
+      const styles = MathStickGame.CHARACTER_STYLES || {};
+      const activeStyle = styles[stickman.characterStyle] || styles.gojo;
+      const styleRgb = (activeStyle && activeStyle.glRgb) || [0.22, 0.78, 0.98];
 
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);
@@ -350,7 +359,7 @@ void main() {
       gl.uniform2f(u.uStickPx, sPos.x, sPos.y);
       gl.uniform2f(u.uVelNorm, stickman.vx / Math.max(1, speed), -stickman.vy / Math.max(1, speed));
       gl.uniform1f(u.uSpeedNorm, speedNorm);
-      gl.uniform1f(u.uSurfActive, stickman.surfingCurve ? 1.0 : 0.0);
+      gl.uniform1f(u.uSurfActive, surfActive);
       gl.uniform1f(u.uSlopeAngle, stickman.curveSlopeAngle || 0);
       gl.uniform1f(u.uDashGlow, dashGlow);
       gl.uniform1f(u.uDanceMode, danceMode);
@@ -362,6 +371,9 @@ void main() {
       gl.uniform2f(u.uOrbPurplePx, px, py);
       gl.uniform1f(u.uOrbPurpleAlpha, pa);
       gl.uniform1f(u.uPurpleRadiusPx, pr);
+      if (u.uStyleColor) {
+        gl.uniform3f(u.uStyleColor, styleRgb[0], styleRgb[1], styleRgb[2]);
+      }
 
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       gl.bindVertexArray(null);

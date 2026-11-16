@@ -352,6 +352,58 @@ body {
   box-shadow: 0 0 6px var(--accent-ok);
 }
 
+/* Warrior Style Switcher Button */
+.btn-style {
+  border-color: var(--card-border);
+  gap: 5px;
+}
+
+.style-chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: #38bdf8;
+  box-shadow: 0 0 7px rgba(56, 189, 248, 0.7);
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn-style[data-style='gojo'] {
+  border-color: rgba(56, 189, 248, 0.45);
+}
+
+.btn-style[data-style='gojo'] .style-chip-dot {
+  background: #38bdf8;
+  box-shadow: 0 0 7px rgba(56, 189, 248, 0.78);
+}
+
+.btn-style[data-style='toji'] {
+  border-color: rgba(52, 211, 153, 0.48);
+}
+
+.btn-style[data-style='toji'] .style-chip-dot {
+  background: #34d399;
+  box-shadow: 0 0 7px rgba(52, 211, 153, 0.78);
+}
+
+.btn-style[data-style='benimaru'] {
+  border-color: rgba(239, 68, 68, 0.52);
+}
+
+.btn-style[data-style='benimaru'] .style-chip-dot {
+  background: #ef4444;
+  box-shadow: 0 0 7px rgba(239, 68, 68, 0.8);
+}
+
+.btn-style[data-style='animator'] {
+  border-color: rgba(245, 158, 11, 0.48);
+}
+
+.btn-style[data-style='animator'] .style-chip-dot {
+  background: #f59e0b;
+  box-shadow: 0 0 7px rgba(245, 158, 11, 0.78);
+}
+
 /* Input Status Card */
 .input-status-card {
   padding: 6px 10px;
@@ -1368,6 +1420,16 @@ kbd {
   box-shadow: 0 0 10px rgba(245, 158, 11, 0.25);
 }
 
+.weapon-parry-btn {
+  border-color: rgba(253, 224, 71, 0.48);
+}
+
+.weapon-parry-btn.is-parrying {
+  background: rgba(56, 189, 248, 0.25);
+  border-color: #fde047;
+  box-shadow: 0 0 12px rgba(253, 224, 71, 0.45);
+}
+
 .weapon-vec-btn {
   border-color: rgba(52, 211, 153, 0.45);
 }
@@ -1376,7 +1438,7 @@ kbd {
   font-size: 0.72rem;
   color: var(--text-muted);
   text-align: center;
-  max-width: 560px;
+  max-width: 660px;
 }
 
 @media (max-width: 1000px) {
@@ -1405,6 +1467,15 @@ kbd {
   .arena-panel,
   .vector-panel {
     width: min(330px, calc(100vw - 24px));
+  }
+
+  .weapon-bar {
+    padding: 6px 8px;
+  }
+
+  .weapon-btn {
+    padding: 5px 8px;
+    gap: 4px;
   }
 
   .weapon-sub {

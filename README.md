@@ -1,24 +1,25 @@
-# Stickman · Orthonormal Cartesian Frame v3.0
+# Stickman · Orthonormal Cartesian Frame v4.0
 
-An interactive **Orthonormal Cartesian Coordinate System `(O; i, j)`**, **Vector Mechanics Engine**, & **Calculus Combat Playground** where an IK-animated Stickman physically walks, climbs the `y`-axis, surfs arbitrary `y = f(x)` curves across all four quadrants, **launches & rides moving mathematical vectors (`u⃗`)**, composes velocities via **Chasles' relation ($\vec{u} + \vec{w} = \vec{R}$)**, and battles calculus constructs using the right mathematical operators.
+An interactive **Orthonormal Cartesian Coordinate System `(O; i, j)`**, **Vector Mechanics Engine**, & **Anime Stickman Action-Calculus Game** where a stylized procedural-IK warrior sprints, climbs the `y`-axis, surfs arbitrary `y = f(x)` curves across all four quadrants, **physically throws & rides steerable vectors (`u⃗`)**, composes velocities via **Chasles' relation ($\vec{u} + \vec{w} = \vec{R}$)**, and battles articulated Stickman constructs using mathematical swords & parries.
 
-## What's New in v3.0
+## What's New in v4.0
 
-- **Rideable Vectors (`u⃗ = (uₓ, uᵧ)` & Chasles Addition)**:
-  - Launch real Cartesian vectors (`U`, presets, numerical components, or click/drag Aim on the plane) displaying orthogonal `(i, j)` projections, magnitude `‖u⃗‖`, and angle `θ`.
-  - Sprint (`Shift`) + jump onto the vector shaft to ride it with Galilean velocity composition ($\vec{V}_{\text{total}} = \vec{V}_{\text{vec}} + \vec{V}_{\text{player}}$), and trigger **`U` mid-ride** for live **Chasles addition** ($\vec{u} + \vec{w} = \vec{R}$).
-- **Math Battle Arena (`ساحة المعركة الرياضية` / `Arena`)**:
-  - Wave-based mathematical combat with 4 operator weapons (`[1] d/dx`, `[2] ∫ dx`, `[3] -f(x)`, `[4] -v⃗ / ⊥`) aimed by mouse or keyboard (`J`), plus right-drag camera panning.
-  - Real mathematical rules against 6 enemy archetypes: lower Polynomial degrees with `d/dx` (`∫ dx` grows their degree!), fill negative Integral Deficits with `∫ dx`, cancel invariant Waves/`eˣ` with `-f(x)`, neutralize Vector Force Chargers (`F⃗`) with opposite/orthogonal vectors (`-v⃗` / `⊥` or launched rideable `u⃗` collisions!), smooth C⁰ kinks `|x - a|` with `∫ dx` before differentiating, and defeat multi-phase Boss waves.
-- **Physics & Calculus Inspection Fixes**: Fixed `Sprint` toggle propagation, seamless Quadrant III/IV negative-`y` curve surfing (`S + Space` drop-through, one-way `y = 0` axis, deep fall recovery), tangent root detection (`root-min` / `root-max`) with deduplicated critical markers, and double-jump buffer bleed.
+- **Physical Vector Throwing + Smooth 360° Mid-Ride Steering & Overdrive**:
+  - Aim & launch (`U` or mouse aim) plays a windup IK arm coil and whips a glowing vector spear forward from Stickman's hand (`throwState`), allowing sprinting/leaping right onto the shaft to ride it.
+  - While riding, steer direction angle $\theta$ smoothly in full 360° (`W`/`S`/`A`/`D` or Arrows) around your stance pivot with conserved $\|\vec{u}\|$, engage **`Shift` Vector Overdrive (`×2.35`)** with slipstream shockwaves & GPU ribbons, use **`U` mid-ride** for live **Chasles addition**, and **`Space`** to vault cleanly off.
+- **Alan Becker × Dead Cells IK Stickman Combat (`ساحة المعركة الرياضية` / `Arena`)**:
+  - Battle **articulated procedural-IK Stickman enemies** wielding math-reactive weaponry and glowing `!` telegraph windups across all 6 archetypes (`poly`, `deficit`, `harmonic`, `vector_charger`, `kink`, and 4-phase `Boss`).
+  - Wield **4 selectable Swords & Weapons** (`[1] d/dx` Katana, `[2] ∫ dx` Heavy Broadsword, `[3] -f(x)` Twin Blades, `[4] -v⃗ / ⊥` Force Spear) with **3-hit melee combos**, crescent slash arcs + sword-wave projectiles, timed **Parry** (`K` or Right-Click, `+4 HP` & `PARRY CRIT`), **Air Ground-Slam** (`S + Attack`), **Hitstop** freeze frames, and DPR-aware **Screen Shake**.
+- **Selectable Anime Warrior Styles (`N` / Toolbar Switcher)** + Dynamic GPU Shader Sync:
+  - **`Infinity` (Gojo)**: Wind-reactive spiky silver-white hair, dark obsidian coat, Six Eyes cyan glow.
+  - **`Zero Curse` (Toji)**: Swept black hair with bangs, fitted top + hakama trousers, purple sash, emerald aura.
+  - **`Crimson Pyre` (Benimaru)**: Black-crimson spiky hair, flame-motif haori, mismatched `○ / ×` eyes.
+  - **`Animator+` (Alan)**: Sharp classic Stickman silhouette enhanced with amber energy aura.
 
-## What's Included from v2.0 & Core
+## Included from v3.0 & Core
 
-- **Symbolic Calculus CAS Engine**: Parses `y = f(x)` into an AST, symbolically differentiates $f'(x)$ and $f''(x)$, detects roots/local extrema, and computes live signed definite integrals $\int_0^x f(t)\,dt$.
-- **Lightweight WebGL 2 Shader Overlay (`FX`)**: Hardware-accelerated GPU glow, tangent surf ribbons, velocity streaks, and shaders with graceful fallback.
-- **Procedural Web Audio Math Synth**: Velocity- and slope-reactive synth plus crisp SFX for vectors, Chasles joins, operator weapons, hits, and platforming.
-- **Derivative Mastery Trials (تحديات إتقان المشتقات)**: 6 Arabic calculus challenges covering tangent lines, extrema, inflection points, $f'(x)$ graphing, smooth $C^1$ seams, and launch calculus.
-- **Multi-Input & Desktop/Web Ready**: Keyboard, Mouse, Gamepad/Controller, On-Screen Touch Pad, packaged for Windows via **Tauri 2** and deployed to web.
+- **Symbolic Calculus CAS Engine & Vector Mechanics**: Parses `y = f(x)`, symbolically computes $f'(x)$, $f''(x)$, roots/extrema, and signed integrals $\int_0^x f(t)\,dt$; Quadrant III/IV curve surfing (`S + Space` drop-through), WebGL 2 shader FX, procedural Web Audio SFX/synth, and 6 **Derivative Mastery Trials**.
+- **Multi-Input & Desktop/Web Ready**: Keyboard, Mouse, Gamepad/Controller, On-Screen Touch Pad, packaged for Windows via **Tauri 2**.
 
 ## Download for Windows
 
@@ -34,4 +35,4 @@ npx serve .
 
 ## Automated Windows Releases (GitHub Actions)
 
-Pushing a version tag like `v3.0.0` triggers `.github/workflows/release.yml` on `windows-latest` to compile the Tauri v2 desktop app and publish the Windows installers and portable archive automatically to GitHub Releases.
+Pushing a version tag like `v4.0.0` triggers `.github/workflows/release.yml` on `windows-latest` to compile the Tauri v2 desktop app and publish the Windows installers and portable archive automatically to GitHub Releases.

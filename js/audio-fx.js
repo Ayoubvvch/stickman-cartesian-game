@@ -109,6 +109,11 @@
       this.playTone(280, 0.14, 'triangle', 0.055, 620);
     }
 
+    playThrowWhoosh() {
+      this.playTone(620, 0.09, 'sine', 0.045, 220);
+      setTimeout(() => this.playTone(340, 0.12, 'triangle', 0.04, 720), 40);
+    }
+
     playVectorMount() {
       this.playTone(440, 0.11, 'sine', 0.05, 660);
     }
@@ -119,9 +124,35 @@
     }
 
     playWeaponFire(weaponIndex = 0) {
-      const baseFreqs = [480, 310, 560, 410];
-      const f = baseFreqs[weaponIndex % baseFreqs.length] || 440;
-      this.playTone(f, 0.085, weaponIndex === 1 ? 'sine' : 'triangle', 0.04, f * 1.35);
+      this.playSwordSwing(weaponIndex, 0);
+    }
+
+    playSwordSwing(weaponIndex = 0, comboStep = 0) {
+      const base = [680, 290, 820, 520][weaponIndex % 4] || 560;
+      const stepBoost = 1 + comboStep * 0.12;
+      if (weaponIndex === 1) {
+        // Heavy Broadsword cleave
+        this.playTone(base, 0.14, 'sawtooth', 0.032, 110);
+      } else if (weaponIndex === 2) {
+        // Twin Daggers rapid snap
+        this.playTone(base * stepBoost, 0.06, 'triangle', 0.038, 360);
+      } else if (weaponIndex === 3) {
+        // Piercing Vector Spear thrust
+        this.playTone(base * stepBoost, 0.1, 'sawtooth', 0.03, base * 1.65);
+      } else {
+        // Derivative Katana razor slash
+        this.playTone(base * stepBoost, 0.075, 'triangle', 0.042, 260);
+      }
+    }
+
+    playParryClang() {
+      this.playTone(1046.5, 0.12, 'triangle', 0.075, 1396.9);
+      setTimeout(() => this.playTone(1567.98, 0.22, 'sine', 0.065, 2093), 24);
+    }
+
+    playGroundSlam() {
+      this.playTone(165, 0.18, 'sawtooth', 0.055, 48);
+      setTimeout(() => this.playTone(329.6, 0.12, 'triangle', 0.04, 196), 20);
     }
 
     playMathHitRight() {
@@ -181,14 +212,17 @@
       this._prevJumps = stickman.jumpsRemaining;
       this._prevFlip = stickman.flipTimer > 0;
 
-      if (!this.ctx && !(stickman.surfingCurve && Math.abs(stickman.curveSpeed) > 0.8)) {
+      const isRidingActive =
+        (stickman.surfingCurve || stickman.ridingVector) &&
+        Math.hypot(stickman.vx, stickman.vy) > 0.6;
+      if (!this.ctx && !isRidingActive) {
         return;
       }
 
       const ctx = this.ctx;
       if (!ctx) return;
 
-      if (this.muted || !this.sfxEnabled || !stickman.surfingCurve || Math.abs(stickman.curveSpeed) < 0.6) {
+      if (this.muted || !this.sfxEnabled || !isRidingActive) {
         if (this._surfGain) {
           this._surfGain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
         }
@@ -196,13 +230,16 @@
       }
 
       this._ensureSurfNodes(ctx);
-      const speedNorm = utils.clamp(Math.abs(stickman.curveSpeed) / 14.0, 0, 1);
+      const liveSpeed = stickman.ridingVector
+        ? Math.hypot(stickman.vx, stickman.vy)
+        : Math.abs(stickman.curveSpeed);
+      const speedNorm = utils.clamp(liveSpeed / 14.0, 0, 1);
       const slopeNorm = utils.clamp(Math.abs(Math.sin(stickman.curveSlopeAngle || 0)), 0, 1);
-      const targetFreq = 165 + speedNorm * 220 + slopeNorm * 140;
-      const targetGain = 0.012 + speedNorm * 0.024;
+      const targetFreq = (stickman.ridingVector ? 210 : 165) + speedNorm * 240 + slopeNorm * 140;
+      const targetGain = 0.011 + speedNorm * 0.024;
 
       this._surfOsc.frequency.setTargetAtTime(targetFreq, ctx.currentTime, 0.04);
-      this._surfFilter.frequency.setTargetAtTime(420 + speedNorm * 900, ctx.currentTime, 0.05);
+      this._surfFilter.frequency.setTargetAtTime(420 + speedNorm * 950, ctx.currentTime, 0.05);
       this._surfGain.gain.setTargetAtTime(targetGain, ctx.currentTime, 0.05);
     }
   }

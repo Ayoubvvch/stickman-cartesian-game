@@ -19,7 +19,8 @@
   const JUMP_KEYS = ['Space', 'ArrowUp', 'KeyW'];
   const CROUCH_KEYS = ['ArrowDown', 'KeyS'];
   const SPRINT_KEYS = ['ShiftLeft', 'ShiftRight'];
-  const DASH_KEYS = ['KeyE', 'KeyK', 'KeyX'];
+  const DASH_KEYS = ['KeyE', 'KeyX'];
+  const PARRY_KEYS = ['KeyK'];
   const CLIMB_KEYS = ['KeyQ'];
   const FREEFALL_KEYS = ['KeyG'];
   const DANCE_KEYS = ['KeyZ'];
@@ -58,6 +59,7 @@
       this.queuedFreeFall = false;
       this.queuedDance = false;
       this.queuedVectorLaunch = false;
+      this.queuedParry = false;
       this.weaponKeysEnabled = false;
 
       this.activeSource = 'keyboard';
@@ -102,6 +104,7 @@
 
       this._frameSample = {
         moveX: 0,
+        steerY: 0,
         analogMagnitude: 0,
         isAnalogStick: false,
         sprint: false,
@@ -109,12 +112,14 @@
         jumpPressed: false,
         jumpReleased: false,
         spaceHeld: false,
+        spacePressed: false,
         crouchHeld: false,
         climbUpHeld: false,
         climbDownHeld: false,
         climbGrabPressed: false,
         releaseClimbPressed: false,
         dashPressed: false,
+        parryPressed: false,
         freeFallPressed: false,
         dancePressed: false,
         danceStyleIndex: null,
@@ -159,7 +164,8 @@
         this.justReleasedKeys.size > 0 ||
         this.queuedFreeFall ||
         this.queuedDance ||
-        this.queuedVectorLaunch
+        this.queuedVectorLaunch ||
+        this.queuedParry
       ) {
         return true;
       }
@@ -271,6 +277,11 @@
 
     triggerVectorLaunch() {
       this.queuedVectorLaunch = true;
+      this._notifyWake();
+    }
+
+    triggerParry() {
+      this.queuedParry = true;
       this._notifyWake();
     }
 
@@ -466,6 +477,9 @@
       const kbJumpPressed =
         this._anyInSet(this.justPressedKeys, JUMP_KEYS) ||
         (this.virtualState.jump && !this.prevVirtualJump);
+      const kbSpacePressed =
+        this.justPressedKeys.has('Space') ||
+        (this.virtualState.jump && !this.prevVirtualJump);
       const kbJumpReleased =
         this._anyInSet(this.justReleasedKeys, JUMP_KEYS) ||
         (!this.virtualState.jump && this.prevVirtualJump);
@@ -478,6 +492,8 @@
       const kbDashPressed =
         this._anyInSet(this.justPressedKeys, DASH_KEYS) ||
         (this.virtualState.dash && !this.prevVirtualDash);
+      const kbParryPressed =
+        this._anyInSet(this.justPressedKeys, PARRY_KEYS) || this.queuedParry;
       const kbClimbPressed =
         this._anyInSet(this.justPressedKeys, CLIMB_KEYS) ||
         (this.virtualState.up && !this.prevVirtualUp);
@@ -511,6 +527,7 @@
       this.queuedFreeFall = false;
       this.queuedDance = false;
       this.queuedVectorLaunch = false;
+      this.queuedParry = false;
       this.prevVirtualJump = this.virtualState.jump;
       this.prevVirtualDash = this.virtualState.dash;
       this.prevVirtualDance = this.virtualState.dance;
@@ -536,8 +553,16 @@
         }
       }
 
+      const steerUp = kbUpHeld || Boolean(gp && gp.climbUpHeld);
+      const steerDown = kbDownHeld || Boolean(gp && gp.climbDownHeld);
+      let steerY = (steerUp ? 1 : 0) - (steerDown ? 1 : 0);
+      if (gp && Math.abs(gp.stickY) > 0.2 && !kbUpHeld && !kbDownHeld) {
+        steerY = utils.clamp(-gp.stickY, -1, 1);
+      }
+
       const out = this._frameSample;
       out.moveX = utils.clamp(moveX, -1, 1);
+      out.steerY = utils.clamp(steerY, -1, 1);
       out.analogMagnitude = utils.clamp(analogMagnitude, 0, 1);
       out.isAnalogStick = isAnalogStick;
       out.sprint = sprint;
@@ -548,6 +573,7 @@
         this.keysDown.has('Space') ||
         this.virtualState.jump ||
         Boolean(gp && gp.jumpHeld);
+      out.spacePressed = kbSpacePressed || Boolean(gp && gp.jumpPressed);
       out.crouchHeld = kbCrouchHeld || Boolean(gp && gp.crouchHeld);
       out.climbUpHeld = kbUpHeld || Boolean(gp && gp.climbUpHeld);
       out.climbDownHeld = kbDownHeld || Boolean(gp && gp.climbDownHeld);
@@ -555,6 +581,7 @@
       out.releaseClimbPressed =
         kbClimbPressed || Boolean(gp && gp.releaseClimbPressed);
       out.dashPressed = kbDashPressed || Boolean(gp && gp.dashPressed);
+      out.parryPressed = kbParryPressed;
       out.freeFallPressed = kbFreeFallPressed;
       out.dancePressed = kbDancePressed;
       out.danceStyleIndex = danceStyleIndex;

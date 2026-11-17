@@ -529,7 +529,7 @@
         this._drawArrowHead(ctx, spB.x, spB.y, ang, 12, theme.vecLaunched);
 
         const label = `u⃗ = (${p.ux.toFixed(1)}, ${p.uy.toFixed(1)}) · ‖u⃗‖ = ${p.norm.toFixed(2)} · θ = ${p.angleDeg.toFixed(0)}°`;
-        ctx.font = "600 11.5px 'Cascadia Mono', 'Consolas', monospace";
+        ctx.font = "600 11.5px 'Cascadia Mono', 'Cambria Math', 'Segoe UI Symbol', 'Consolas', monospace";
         const tw = ctx.measureText(label).width;
         const lx = utils.clamp(spB.x, tw * 0.5 + 10, gridRenderer.width - tw * 0.5 - 10);
         const ly = utils.clamp(spB.y - 26, 20, gridRenderer.height - 20);
@@ -573,7 +573,7 @@
         ctx.stroke();
         ctx.setLineDash([]);
 
-        ctx.font = "700 11px 'Cascadia Mono', 'Consolas', monospace";
+        ctx.font = "700 11px 'Cascadia Mono', 'Cambria Math', 'Segoe UI Symbol', 'Consolas', monospace";
         ctx.fillStyle = theme.vecResultant;
         ctx.textAlign = 'center';
         ctx.fillText('Chasles: u⃗ + w⃗ = R⃗', (p0.x + p2.x) * 0.5, Math.min(p0.y, p1.y, p2.y) - 12);
@@ -687,7 +687,7 @@
         const tag = v.beingRidden
           ? `u⃗(${v.ux.toFixed(1)}, ${v.uy.toFixed(1)}) · θ=${deg.toFixed(0)}°${multTxt}`
           : `u⃗(${v.ux.toFixed(1)}, ${v.uy.toFixed(1)}) · ‖${v.norm.toFixed(1)}‖`;
-        ctx.font = "600 10.5px 'Cascadia Mono', 'Consolas', monospace";
+        ctx.font = "600 10.5px 'Cascadia Mono', 'Cambria Math', 'Segoe UI Symbol', 'Consolas', monospace";
         ctx.fillStyle = mainColor;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';

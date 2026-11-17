@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://ayoubvvch.github.io/stickman-cartesian-game/sitemap.xml

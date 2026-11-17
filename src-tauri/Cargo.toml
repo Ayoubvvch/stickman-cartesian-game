@@ -3,6 +3,11 @@ name = "stickman-cartesian-game"
 version = "4.1.0"
 description = "Interactive Orthonormal Cartesian Frame & Calculus Stickman Game"
 authors = ["AcMods (Ayoubvvch)"]
+license = "MIT"
+homepage = "https://ayoubvvch.github.io/stickman-cartesian-game/"
+repository = "https://github.com/Ayoubvvch/stickman-cartesian-game"
+keywords = ["stickman", "cartesian", "calculus", "game", "tauri"]
+categories = ["games", "science"]
 edition = "2021"
 
 [build-dependencies]

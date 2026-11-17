@@ -1,0 +1,31 @@
+name: Feature Request
+description: Suggest a new math mode, calculus trial, weapon, enemy, or animation improvement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Feature Summary
+      description: Describe what you would like to add or improve.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Related Area
+      options:
+        - Symbolic CAS / Function Lab
+        - Derivative Mastery Trials
+        - Vector Launcher / Chasles Mechanics
+        - Math Battle Arena (Weapons / Enemies / Boss)
+        - Procedural Animation / Verlet / IK / WebGL 2
+        - UI / Localization / Accessibility
+        - Windows Tauri App
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Math or Gameplay Details
+      description: Explain how it works mathematically and/or interactively.

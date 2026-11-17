@@ -1,0 +1,37 @@
+name: Bug Report
+description: Report a bug, physics glitch, UI overlap, or formula parsing issue
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what happened.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: |
+        1. Open mode (Sandbox / f(x) Lab / Trials / Arena / Vector Launcher)
+        2. Enter formula or perform action
+        3. Observe behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Web (GitHub Pages / Browser)
+        - Windows Desktop (Tauri v2 .exe / .msi)
+        - Local Dev Server
+    validations:
+      required: true
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots or Console Errors (if any)
+      description: Paste any screenshot or browser console log.

@@ -1,7 +1,36 @@
 {
   "name": "stickman-cartesian-game",
   "version": "4.1.0",
-  "description": "Interactive orthonormal Cartesian coordinate system and calculus platformer featuring an IK-animated stickman",
+  "description": "Interactive orthonormal Cartesian coordinate system, symbolic calculus surfer, steerable Chasles vector physics, and procedural-IK stickman action-math game",
+  "license": "MIT",
+  "author": "Ayoubvvch (AcMods)",
+  "homepage": "https://ayoubvvch.github.io/stickman-cartesian-game/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ayoubvvch/stickman-cartesian-game.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Ayoubvvch/stickman-cartesian-game/issues"
+  },
+  "keywords": [
+    "cartesian-coordinate-system",
+    "orthonormal-frame",
+    "calculus",
+    "derivatives",
+    "integrals",
+    "symbolic-math",
+    "vectors",
+    "chasles-relation",
+    "stickman",
+    "inverse-kinematics",
+    "verlet-physics",
+    "procedural-animation",
+    "canvas-2d",
+    "webgl2",
+    "educational-game",
+    "math-game",
+    "tauri"
+  ],
   "private": true,
   "scripts": {
     "build": "node scripts/prepare-dist.mjs",

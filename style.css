@@ -1,7 +1,7 @@
 :root {
-  --font-ui: 'Segoe UI', 'Tahoma', system-ui, -apple-system, sans-serif;
+  --font-ui: 'Segoe UI', 'Cambria Math', 'Segoe UI Symbol', 'Tahoma', system-ui, -apple-system, sans-serif;
   --font-math: 'Cambria Math', 'Times New Roman', Georgia, serif;
-  --font-mono: 'Cascadia Mono', 'Consolas', 'Courier New', monospace;
+  --font-mono: 'Cascadia Mono', 'Cambria Math', 'Segoe UI Symbol', 'Consolas', 'Courier New', monospace;
 }
 
 body.theme-light {
@@ -135,7 +135,7 @@ body {
   gap: 12px;
   pointer-events: none;
   z-index: 20;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .hud-card {
@@ -250,6 +250,7 @@ body {
 
 /* Left & Right HUD Stacks */
 .hud-left-stack {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -257,6 +258,8 @@ body {
 }
 
 .hud-right-stack {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -267,21 +270,23 @@ body {
   padding: 5px 6px;
   display: flex;
   align-items: center;
-  gap: 5px;
+  justify-content: flex-end;
+  gap: 4px;
   flex-wrap: wrap;
+  max-width: 100%;
 }
 
 .tool-group {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
 }
 
 .tool-sep {
   width: 1px;
-  height: 20px;
+  height: 18px;
   background: var(--card-border);
-  margin: 0 2px;
+  margin: 0 1px;
   flex: 0 0 auto;
 }
 
@@ -291,9 +296,9 @@ body {
   background: var(--btn-bg);
   color: var(--text-main);
   font-family: var(--font-ui);
-  font-size: 0.79rem;
+  font-size: 0.76rem;
   font-weight: 600;
-  padding: 6px 9px;
+  padding: 5px 7.5px;
   border-radius: 9px;
   cursor: pointer;
   display: inline-flex;
@@ -305,8 +310,8 @@ body {
 }
 
 .tool-btn.tool-icon {
-  min-width: 30px;
-  padding: 6px 8px;
+  min-width: 28px;
+  padding: 5px 7px;
 }
 
 .tool-btn.tool-trials {
@@ -1480,5 +1485,20 @@ kbd {
 
   .weapon-sub {
     display: none;
+  }
+}
+
+@media (max-width: 780px) {
+  .hud-top {
+    flex-wrap: wrap;
+  }
+
+  .hud-left-stack,
+  .hud-right-stack {
+    flex: 1 1 100%;
+  }
+
+  .toolbar-card {
+    justify-content: flex-start;
   }
 }

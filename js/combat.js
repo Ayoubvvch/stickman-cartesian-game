@@ -2044,7 +2044,7 @@
 
         // Equation tag + recommended sword/operator badge above enemy head
         const eqText = this._getEnemyFormula(e);
-        ctx.font = "700 11px 'Cascadia Mono', 'Consolas', monospace";
+        ctx.font = "700 11px 'Cascadia Mono', 'Cambria Math', 'Segoe UI Symbol', 'Consolas', monospace";
         const tw = ctx.measureText(eqText).width;
         const bx = spTop.x - tw * 0.5 - 7;
         const by = spTop.y - 36;
@@ -2062,7 +2062,7 @@
         ctx.textBaseline = 'middle';
         ctx.fillText(eqText, spTop.x, by + 10);
 
-        ctx.font = "700 10px 'Cascadia Mono', 'Consolas', monospace";
+        ctx.font = "700 10px 'Cascadia Mono', 'Cambria Math', 'Segoe UI Symbol', 'Consolas', monospace";
         ctx.fillStyle = mainCol;
         ctx.fillText(hintOp, spTop.x, by - 8);
         ctx.restore();
@@ -2162,7 +2162,7 @@
         ctx.stroke();
 
         ctx.rotate(-ang);
-        ctx.font = "700 9.5px 'Cascadia Mono', 'Consolas', monospace";
+        ctx.font = "700 9.5px 'Cascadia Mono', 'Cambria Math', 'Segoe UI Symbol', 'Consolas', monospace";
         ctx.fillStyle = col;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
@@ -2176,7 +2176,7 @@
         const alpha = utils.clamp(p.life / p.maxLife, 0, 1);
         ctx.save();
         ctx.globalAlpha = alpha;
-        ctx.font = "700 12px 'Segoe UI', 'Cascadia Mono', sans-serif";
+        ctx.font = "700 12px 'Segoe UI', 'Cambria Math', 'Segoe UI Symbol', 'Cascadia Mono', sans-serif";
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = theme.coordTagBg;

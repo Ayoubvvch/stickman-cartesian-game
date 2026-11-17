@@ -19,4 +19,12 @@ for (const item of itemsToCopy) {
   fs.cpSync(src, dest, { recursive: true });
 }
 
+const optionalStaticFiles = ['robots.txt', 'sitemap.xml', 'manifest.webmanifest'];
+for (const file of optionalStaticFiles) {
+  const src = path.join(rootDir, file);
+  if (fs.existsSync(src)) {
+    fs.copyFileSync(src, path.join(distDir, file));
+  }
+}
+
 console.log('Prepared dist/ with static frontend assets.');
